@@ -1,0 +1,91 @@
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+
+import java.io.File;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.*;
+
+public class DummyOrderDataGenerator {
+
+    // Random generators
+    private static final Random random = new Random();
+    private static final String[] firstNames = {"Kamala", "John", "Peter", "Mary", "Bruce", "Tony", "Natasha", "Steve", "Wanda", "Clint"};
+    private static final String[] lastNames = {"Khan", "Doe", "Parker", "Jane", "Wayne", "Stark", "Romanoff", "Rogers", "Maximoff", "Barton"};
+    private static final String[] staffMembers = {"Sean Cassidy", "Jane Smith", "Logan Howlett", "Scott Summers", "Jean Grey"};
+    private static final String[] services = {"Women's Haircut", "Men's Haircut", "Beard Trim", "Hair Wash", "Hair Coloring", "Facial", "Massage"};
+    private static final int[] prices = {20, 30, 40, 50, 60, 70, 80};
+
+    public static void main(String[] args) throws IOException {
+        Map<String, Object> jsonData = new HashMap<>();
+        List<Map<String, Object>> datesList = new ArrayList<>();
+
+        // Generate 5 dates (last 5 days from today)
+        for (int d = 0; d < 5; d++) {
+            LocalDate date = LocalDate.now().minusDays(d);
+            Map<String, Object> dateEntry = new HashMap<>();
+            dateEntry.put("date", date.toString());
+
+            List<Map<String, Object>> orders = new ArrayList<>();
+            int numOrders = random.nextInt(20) + 1; // up to 20 orders
+
+            for (int i = 0; i < numOrders; i++) {
+                Map<String, Object> order = new HashMap<>();
+                order.put("orderTitle", "Order " + (i + 1));
+
+                // Random time slots
+                int startHour = 8 + random.nextInt(10); // between 8 AM - 6 PM
+                int duration = 30 + random.nextInt(60); // 30-90 mins
+                int endHour = Math.min(startHour + 1, 20);
+
+                order.put("startTime", startHour + ":00 AM");
+                order.put("endTime", endHour + ":00 AM");
+                order.put("duration", duration + " min");
+
+                // Customer details
+                String customerName = firstNames[random.nextInt(firstNames.length)] + " " +
+                                      lastNames[random.nextInt(lastNames.length)];
+                order.put("customerName", customerName);
+                order.put("phoneNo", "+1(" + (100 + random.nextInt(900)) + ") " + (100 + random.nextInt(900)) + "-" + (1000 + random.nextInt(9000)));
+
+                // Tags
+                order.put("statusTag", random.nextBoolean() ? "Completed" : "Pending");
+                order.put("paymentTag", random.nextBoolean() ? "Paid" : "Unpaid");
+                order.put("staffMember", staffMembers[random.nextInt(staffMembers.length)]);
+
+                // Services
+                List<Map<String, Object>> serviceList = new ArrayList<>();
+                int numServices = 1 + random.nextInt(3); // 1–3 services
+                int total = 0;
+
+                for (int s = 0; s < numServices; s++) {
+                    Map<String, Object> service = new HashMap<>();
+                    String serviceName = services[random.nextInt(services.length)];
+                    int price = prices[random.nextInt(prices.length)];
+                    service.put("serviceName", serviceName);
+                    service.put("price", price + "$");
+                    serviceList.add(service);
+                    total += price;
+                }
+
+                order.put("services", serviceList);
+                order.put("total", total + "$");
+
+                orders.add(order);
+            }
+
+            dateEntry.put("orders", orders);
+            dateEntry.put("noOfOrders", orders.size());
+            datesList.add(dateEntry);
+        }
+
+        jsonData.put("dates", datesList);
+
+        // Write JSON to file
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectWriter writer = mapper.writerWithDefaultPrettyPrinter();
+        writer.writeValue(new File("dummy_orders.json"), jsonData);
+
+        System.out.println("✅ dummy_orders.json generated successfully!");
+    }
+}
