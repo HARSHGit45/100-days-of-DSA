@@ -1,11 +1,10 @@
 import xml.etree.ElementTree as ET
 import csv
 
-# Input JaCoCo XML and output CSV
 xml_file = "jacoco.xml"
-csv_file = "package_report.csv"
 
-# Define status & priority thresholds
+# ===================== Helpers =====================
+
 def get_status(avg_coverage):
     if avg_coverage < 20:
         return "Critical", "Immediate"
@@ -15,76 +14,142 @@ def get_status(avg_coverage):
         return "Fair", "High"
     elif 80 <= avg_coverage <= 89:
         return "Good", "Low"
-    else:  # >=90
+    else:
         return "Excellent", "Low"
 
-# Parse XML
-tree = ET.parse(xml_file)
-root = tree.getroot()
+# ===================== Package Level =====================
 
-with open(csv_file, mode="w", newline="") as f:
-    writer = csv.writer(f)
-    # CSV Header
-    writer.writerow([
-        "Package",
-        "Total Classes",
-        "Total Methods",
-        "Total Lines",
-        "Instruction Coverage (%)",
-        "Branch Coverage (%)",
-        "Average Coverage (%)",
-        "Status",
-        "Priority"
-    ])
-
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
-
-        # Aggregate counters
-        instr_cov = branch_cov = line_cov = 0
-        instr_total = branch_total = line_total = 0
-        method_count = 0
-        class_count = len(package.findall("class"))
-
-        # Sum counters from classes and methods
-        for cls in package.findall("class"):
-            # Class counters
-            for counter in cls.findall("counter"):
-                ctype = counter.get("type")
-                covered = int(counter.get("covered"))
-                missed = int(counter.get("missed"))
-                total = covered + missed
-                if ctype == "INSTRUCTION":
-                    instr_cov += covered
-                    instr_total += total
-                elif ctype == "BRANCH":
-                    branch_cov += covered
-                    branch_total += total
-                elif ctype == "LINE":
-                    line_cov += covered
-                    line_total += total
-            # Count methods
-            method_count += len(cls.findall("method"))
-
-        # Calculate percentages
-        instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-        branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-        avg_pct = round((instr_pct + branch_pct)/2, 2)
-
-        # Status & priority
-        status, priority = get_status(avg_pct)
-
-        # Write CSV row
+def package_report(root, out_file="package_report.csv"):
+    with open(out_file, "w", newline="") as f:
+        writer = csv.writer(f)
         writer.writerow([
-            pkg_name,
-            class_count,
-            method_count,
-            line_total,
-            instr_pct,
-            branch_pct,
-            avg_pct,
-            status,
-            priority
+            "Package", "Total Classes", "Total Methods", "Total Lines",
+            "Instruction Coverage (%)", "Branch Coverage (%)",
+            "Average Coverage (%)", "Status", "Priority"
         ])
 
-print(f"✅ Package-level coverage report generated: {csv_file}")
+        for package in root.findall("package"):
+            pkg_name = package.get("name")
+            class_count = len(package.findall("class"))
+            method_count = 0
+            instr_cov = instr_total = branch_cov = branch_total = line_total = 0
+
+            for cls in package.findall("class"):
+                method_count += len(cls.findall("method"))
+                for counter in cls.findall("counter"):
+                    ctype = counter.get("type")
+                    covered = int(counter.get("covered"))
+                    missed = int(counter.get("missed"))
+                    if ctype == "INSTRUCTION":
+                        instr_cov += covered; instr_total += covered + missed
+                    elif ctype == "BRANCH":
+                        branch_cov += covered; branch_total += covered + missed
+                    elif ctype == "LINE":
+                        line_total += covered + missed
+
+            instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
+            branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
+            avg_pct = round((instr_pct + branch_pct) / 2, 2)
+            status, priority = get_status(avg_pct)
+
+            writer.writerow([
+                pkg_name, class_count, method_count, line_total,
+                instr_pct, branch_pct, avg_pct, status, priority
+            ])
+
+    print(f"✅ Package-level report written to {out_file}")
+
+# ===================== Class Level =====================
+
+def class_report(root, out_file="class_report.csv"):
+    with open(out_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Package", "Class", "Total Methods", "Total Lines",
+            "Instruction Coverage (%)", "Branch Coverage (%)",
+            "Average Coverage (%)", "Status", "Priority"
+        ])
+
+        for package in root.findall("package"):
+            pkg_name = package.get("name")
+
+            for cls in package.findall("class"):
+                class_name = cls.get("name").split("/")[-1]
+                method_count = len(cls.findall("method"))
+                instr_cov = instr_total = branch_cov = branch_total = line_total = 0
+
+                for counter in cls.findall("counter"):
+                    ctype = counter.get("type")
+                    covered = int(counter.get("covered"))
+                    missed = int(counter.get("missed"))
+                    if ctype == "INSTRUCTION":
+                        instr_cov += covered; instr_total += covered + missed
+                    elif ctype == "BRANCH":
+                        branch_cov += covered; branch_total += covered + missed
+                    elif ctype == "LINE":
+                        line_total += covered + missed
+
+                instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
+                branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
+                avg_pct = round((instr_pct + branch_pct) / 2, 2)
+                status, priority = get_status(avg_pct)
+
+                writer.writerow([
+                    pkg_name, class_name, method_count, line_total,
+                    instr_pct, branch_pct, avg_pct, status, priority
+                ])
+
+    print(f"✅ Class-level report written to {out_file}")
+
+# ===================== Method Level =====================
+
+def method_report(root, out_file="method_report.csv"):
+    with open(out_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Package", "Class", "Method", "Line Number",
+            "Instruction Coverage (%)", "Branch Coverage (%)",
+            "Average Coverage (%)", "Status", "Priority"
+        ])
+
+        for package in root.findall("package"):
+            pkg_name = package.get("name")
+
+            for cls in package.findall("class"):
+                class_name = cls.get("name").split("/")[-1]
+
+                for method in cls.findall("method"):
+                    method_name = method.get("name")
+                    line_number = method.get("line")
+                    instr_cov = instr_total = branch_cov = branch_total = 0
+
+                    for counter in method.findall("counter"):
+                        ctype = counter.get("type")
+                        covered = int(counter.get("covered"))
+                        missed = int(counter.get("missed"))
+                        if ctype == "INSTRUCTION":
+                            instr_cov += covered; instr_total += covered + missed
+                        elif ctype == "BRANCH":
+                            branch_cov += covered; branch_total += covered + missed
+
+                    instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
+                    branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
+                    avg_pct = round((instr_pct + branch_pct) / 2, 2)
+                    status, priority = get_status(avg_pct)
+
+                    writer.writerow([
+                        pkg_name, class_name, method_name, line_number,
+                        instr_pct, branch_pct, avg_pct, status, priority
+                    ])
+
+    print(f"✅ Method-level report written to {out_file}")
+
+# ===================== Run all =====================
+
+if __name__ == "__main__":
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+
+    package_report(root)
+    class_report(root)
+    method_report(root)
