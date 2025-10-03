@@ -1,0 +1,98 @@
+import xml.etree.ElementTree as ET
+import csv
+from collections import defaultdict
+
+# Input JaCoCo XML and output CSV
+xml_file = "jacoco.xml"
+csv_file = "package_report.csv"
+
+# Status & priority mapping
+def get_status(avg_coverage):
+    if avg_coverage < 20:
+        return "Critical", "Immediate"
+    elif 20 <= avg_coverage <= 59:
+        return "Poor", "High"
+    elif 60 <= avg_coverage <= 79:
+        return "Fair", "High"
+    elif 80 <= avg_coverage <= 89:
+        return "Good", "Low"
+    else:  # >=90
+        return "Excellent", "Low"
+
+# Parse JaCoCo XML
+tree = ET.parse(xml_file)
+root = tree.getroot()
+
+# Dictionary to store package-level aggregated data
+package_data = defaultdict(lambda: {
+    "classes": 0, "methods": 0, "lines": 0,
+    "instr_cov": 0, "instr_total": 0,
+    "branch_cov": 0, "branch_total": 0
+})
+
+# Function to normalize package path
+def normalize_package(pkg_name):
+    # Split by / and ignore common root parts (like com/imobile/pos)
+    parts = pkg_name.split("/")
+    # Keep last two levels for logical sub-package (like ui/orders)
+    return "/".join(parts[-2:]) if len(parts) >= 2 else pkg_name
+
+# Process each class
+for cls in root.findall(".//class"):
+    full_pkg = cls.get("name").rsplit("/", 1)[0]  # Remove class name
+    pkg_name = normalize_package(full_pkg)
+
+    # Increment counts
+    package_data[pkg_name]["classes"] += 1
+    package_data[pkg_name]["methods"] += len(cls.findall("method"))
+
+    # Aggregate counters
+    for counter in cls.findall("counter"):
+        ctype = counter.get("type")
+        covered = int(counter.get("covered"))
+        missed = int(counter.get("missed"))
+        total = covered + missed
+
+        if ctype == "INSTRUCTION":
+            package_data[pkg_name]["instr_cov"] += covered
+            package_data[pkg_name]["instr_total"] += total
+        elif ctype == "BRANCH":
+            package_data[pkg_name]["branch_cov"] += covered
+            package_data[pkg_name]["branch_total"] += total
+        elif ctype == "LINE":
+            package_data[pkg_name]["lines"] += total
+
+# Write CSV
+with open(csv_file, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "Package",
+        "Total Classes",
+        "Total Methods",
+        "Total Lines",
+        "Instruction Coverage (%)",
+        "Branch Coverage (%)",
+        "Average Coverage (%)",
+        "Status",
+        "Priority"
+    ])
+
+    for pkg, data in package_data.items():
+        instr_pct = round((data["instr_cov"] / data["instr_total"]) * 100, 2) if data["instr_total"] else 0
+        branch_pct = round((data["branch_cov"] / data["branch_total"]) * 100, 2) if data["branch_total"] else 0
+        avg_pct = round((instr_pct + branch_pct) / 2, 2)
+        status, priority = get_status(avg_pct)
+
+        writer.writerow([
+            pkg,
+            data["classes"],
+            data["methods"],
+            data["lines"],
+            instr_pct,
+            branch_pct,
+            avg_pct,
+            status,
+            priority
+        ])
+
+print(f"✅ Package-level coverage CSV generated: {csv_file}")
