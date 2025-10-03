@@ -1,104 +1,103 @@
 import xml.etree.ElementTree as ET
 import csv
-from collections import defaultdict
+import os
 
-# Input JaCoCo XML and output CSV
-xml_file = "jacoco.xml"
-csv_file = "package_report.csv"
+# ---------- CONFIG ----------
+JACOCO_XML = "jacoco.xml"   # path to your jacoco.xml
+OUTPUT_CSV = "coverage_report.csv"
+# ----------------------------
 
-# Status & priority mapping
-def get_status(avg_coverage):
-    if avg_coverage < 20:
+def get_status_and_priority(pct):
+    """Determine status & priority from avg coverage %."""
+    if pct < 20:
         return "Critical", "Immediate"
-    elif 20 <= avg_coverage <= 59:
+    elif pct < 60:
         return "Poor", "High"
-    elif 60 <= avg_coverage <= 79:
+    elif pct < 80:
         return "Fair", "High"
-    elif 80 <= avg_coverage <= 89:
+    elif pct < 90:
         return "Good", "Low"
-    else:  # >=90
+    else:
         return "Excellent", "Low"
 
-# Parse JaCoCo XML
-tree = ET.parse(xml_file)
-root = tree.getroot()
-
-# Dictionary to store package-level aggregated data
-package_data = defaultdict(lambda: {
-    "classes": 0, "methods": 0, "lines": 0,
-    "instr_cov": 0, "instr_total": 0,
-    "branch_cov": 0, "branch_total": 0
-})
-
-# Function to normalize package path
-def normalize_package(pkg_name):
-    parts = pkg_name.split("/")
-    try:
-        # Find index of base
-        base_index = parts.index("pos")  # anchor after "com/imobile/pos"
-        # Keep "com.imobile.pos" + next 2 levels max
-        allowed_parts = parts[:base_index+1+2]  # pos + 2 extra levels
-    except ValueError:
-        # If "pos" not found, fallback: just take last 3 levels
-        allowed_parts = parts[-3:]
-    return ".".join(allowed_parts)
-
-# Process each class
-for cls in root.findall(".//class"):
-    full_pkg = cls.get("name").rsplit("/", 1)[0]  # Remove class name
-    pkg_name = normalize_package(full_pkg)
-
-    # Increment counts
-    package_data[pkg_name]["classes"] += 1
-    package_data[pkg_name]["methods"] += len(cls.findall("method"))
-
-    # Aggregate counters
-    for counter in cls.findall("counter"):
+def parse_counters(elem):
+    """Extract JaCoCo counters from <counter> elements."""
+    counters = {}
+    for counter in elem.findall("counter"):
         ctype = counter.get("type")
-        covered = int(counter.get("covered"))
         missed = int(counter.get("missed"))
-        total = covered + missed
+        covered = int(counter.get("covered"))
+        total = missed + covered
+        pct = round((covered / total) * 100, 2) if total > 0 else 0
+        counters[ctype] = {
+            "missed": missed,
+            "covered": covered,
+            "total": total,
+            "pct": pct
+        }
+    return counters
 
-        if ctype == "INSTRUCTION":
-            package_data[pkg_name]["instr_cov"] += covered
-            package_data[pkg_name]["instr_total"] += total
-        elif ctype == "BRANCH":
-            package_data[pkg_name]["branch_cov"] += covered
-            package_data[pkg_name]["branch_total"] += total
-        elif ctype == "LINE":
-            package_data[pkg_name]["lines"] += total
+def normalize_package(pkg_name):
+    """
+    Convert imobile/pos/ui/orders -> ui.orders
+    Keep only last two components if deep.
+    """
+    parts = pkg_name.split("/")
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])   # keep last two levels
+    return ".".join(parts)
 
-# Write CSV
-with open(csv_file, mode="w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow([
-        "Package",
-        "Total Classes",
-        "Total Methods",
-        "Total Lines",
-        "Instruction Coverage (%)",
-        "Branch Coverage (%)",
-        "Average Coverage (%)",
-        "Status",
-        "Priority"
-    ])
+def main():
+    tree = ET.parse(JACOCO_XML)
+    root = tree.getroot()
 
-    for pkg, data in package_data.items():
-        instr_pct = round((data["instr_cov"] / data["instr_total"]) * 100, 2) if data["instr_total"] else 0
-        branch_pct = round((data["branch_cov"] / data["branch_total"]) * 100, 2) if data["branch_total"] else 0
-        avg_pct = round((instr_pct + branch_pct) / 2, 2)
-        status, priority = get_status(avg_pct)
-
+    with open(OUTPUT_CSV, "w", newline="") as f:
+        writer = csv.writer(f)
         writer.writerow([
-            pkg,
-            data["classes"],
-            data["methods"],
-            data["lines"],
-            instr_pct,
-            branch_pct,
-            avg_pct,
-            status,
-            priority
+            "Package",
+            "Total Classes",
+            "Total Methods",
+            "Total Lines",
+            "Instruction Coverage (%)",
+            "Branch Coverage (%)",
+            "Average Coverage (%)",
+            "Status",
+            "Priority"
         ])
 
-print(f"✅ Package-level coverage CSV generated: {csv_file}")
+        for pkg in root.findall("package"):
+            pkg_name = normalize_package(pkg.get("name"))
+
+            # Parse counters exactly like JaCoCo
+            counters = parse_counters(pkg)
+
+            instr_pct = counters.get("INSTRUCTION", {}).get("pct", 0)
+            branch_pct = counters.get("BRANCH", {}).get("pct", 0)
+            line_pct = counters.get("LINE", {}).get("pct", 0)
+            method_pct = counters.get("METHOD", {}).get("pct", 0)
+
+            # Define "average" as line coverage (or your choice)
+            avg_pct = line_pct  
+
+            status, priority = get_status_and_priority(avg_pct)
+
+            total_classes = counters.get("CLASS", {}).get("total", 0)
+            total_methods = counters.get("METHOD", {}).get("total", 0)
+            total_lines = counters.get("LINE", {}).get("total", 0)
+
+            writer.writerow([
+                pkg_name,
+                total_classes,
+                total_methods,
+                total_lines,
+                instr_pct,
+                branch_pct,
+                avg_pct,
+                status,
+                priority
+            ])
+
+    print(f"✅ Coverage report written to {OUTPUT_CSV}")
+
+if __name__ == "__main__":
+    main()
