@@ -65,7 +65,7 @@ def class_report(root, out_file="class_report.csv"):
     with open(out_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Package", "Class", "Total Methods", "Total Lines",
+            "Package", "Class (with extension)", "Total Methods", "Total Lines",
             "Instruction Coverage (%)", "Branch Coverage (%)",
             "Average Coverage (%)", "Status", "Priority"
         ])
@@ -74,7 +74,14 @@ def class_report(root, out_file="class_report.csv"):
             pkg_name = package.get("name")
 
             for cls in package.findall("class"):
-                class_name = cls.get("name").split("/")[-1]
+                # Pick extension from JaCoCo
+                source_file = cls.get("sourcefilename")  # e.g. "OrderService.java"
+                if source_file:
+                    class_display = source_file
+                else:
+                    # fallback if not found
+                    class_display = cls.get("name").split("/")[-1]  
+
                 method_count = len(cls.findall("method"))
                 instr_cov = instr_total = branch_cov = branch_total = line_total = 0
 
@@ -95,7 +102,7 @@ def class_report(root, out_file="class_report.csv"):
                 status, priority = get_status(avg_pct)
 
                 writer.writerow([
-                    pkg_name, class_name, method_count, line_total,
+                    pkg_name, class_display, method_count, line_total,
                     instr_pct, branch_pct, avg_pct, status, priority
                 ])
 
@@ -107,7 +114,7 @@ def method_report(root, out_file="method_report.csv"):
     with open(out_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Package", "Class", "Method", "Line Number",
+            "Package", "Class (with extension)", "Method", "Line Number",
             "Instruction Coverage (%)", "Branch Coverage (%)",
             "Average Coverage (%)", "Status", "Priority"
         ])
@@ -116,7 +123,11 @@ def method_report(root, out_file="method_report.csv"):
             pkg_name = package.get("name")
 
             for cls in package.findall("class"):
-                class_name = cls.get("name").split("/")[-1]
+                source_file = cls.get("sourcefilename")
+                if source_file:
+                    class_display = source_file
+                else:
+                    class_display = cls.get("name").split("/")[-1]
 
                 for method in cls.findall("method"):
                     method_name = method.get("name")
@@ -138,7 +149,7 @@ def method_report(root, out_file="method_report.csv"):
                     status, priority = get_status(avg_pct)
 
                     writer.writerow([
-                        pkg_name, class_name, method_name, line_number,
+                        pkg_name, class_display, method_name, line_number,
                         instr_pct, branch_pct, avg_pct, status, priority
                     ])
 
