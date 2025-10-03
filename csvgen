@@ -1,187 +1,44 @@
-import xml.etree.ElementTree as ET
-import csv
+#!/bin/bash
+set -e
 
-xml_file = "jacoco.xml"
+# ===================== Prerequisite Check =====================
+command -v python3 >/dev/null 2>&1 || { echo >&2 "Python3 is required but not installed. Aborting."; exit 1; }
+command -v ./gradlew >/dev/null 2>&1 || { echo >&2 "Gradle wrapper not found. Aborting."; exit 1; }
 
-# ===================== Helpers =====================
-def get_status(avg_coverage):
-    if avg_coverage < 20:
-        return "Critical", "Immediate"
-    elif 20 <= avg_coverage <= 59:
-        return "Poor", "High"
-    elif 60 <= avg_coverage <= 79:
-        return "Fair", "High"
-    elif 80 <= avg_coverage <= 89:
-        return "Good", "Low"
-    else:
-        return "Excellent", "Low"
+# ===================== Variables =====================
+JACOCO_XML="build/reports/jacoco/tsysUnitedStatesDebugUnitTest/jacocoTestReport.xml"
+OUTPUT_DIR="coverage_dashboard"
+PYTHON_SCRIPT="coverage_report.py"
+HTML_FILE="$OUTPUT_DIR/index.html"  # Assuming you put HTML file here
 
-# ===================== Package Level =====================
-def package_report(root, out_file="package_report.csv"):
-    rows = []
+# ===================== Gradle Tasks =====================
+echo "1️⃣ Cleaning project..."
+./gradlew clean
 
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
-        class_count = len(package.findall("class"))
-        method_count = instr_cov = instr_total = branch_cov = branch_total = line_total = 0
+echo "2️⃣ Running unit tests..."
+./gradlew testTsysUnitedStatesDebugUnitTest
 
-        for cls in package.findall("class"):
-            method_count += len(cls.findall("method"))
-            for counter in cls.findall("counter"):
-                ctype = counter.get("type")
-                covered = int(counter.get("covered"))
-                missed = int(counter.get("missed"))
-                total = covered + missed
-                if ctype == "INSTRUCTION":
-                    instr_cov += covered; instr_total += total
-                elif ctype == "BRANCH":
-                    branch_cov += covered; branch_total += total
-                elif ctype == "LINE":
-                    line_total += total
+echo "3️⃣ Generating JaCoCo coverage..."
+./gradlew jacocoTsysUnitedStatesDebugCoverage
 
-        instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-        branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-        avg_pct = round((instr_pct + branch_pct) / 2, 2)
-        status, priority = get_status(avg_pct)
+# Check if XML exists
+if [ ! -f "$JACOCO_XML" ]; then
+    echo "❌ JaCoCo XML not found at $JACOCO_XML"
+    exit 1
+fi
 
-        rows.append([
-            pkg_name, class_count, method_count, line_total,
-            instr_pct, branch_pct, avg_pct, status, priority
-        ])
+# ===================== Generate CSV Reports =====================
+echo "4️⃣ Generating CSV reports from JaCoCo XML..."
+python3 $PYTHON_SCRIPT "$JACOCO_XML" "$OUTPUT_DIR"
 
-    # Sort by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
+# ===================== Launch HTML Dashboard =====================
+echo "5️⃣ Opening HTML dashboard..."
+if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$HTML_FILE"
+elif command -v open >/dev/null 2>&1; then
+    open "$HTML_FILE"
+else
+    echo "⚠ Please open $HTML_FILE manually."
+fi
 
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Total Classes", "Total Methods", "Total Lines",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
-
-    print(f"✅ Package-level report written to {out_file}")
-
-
-# ===================== Class Level =====================
-def class_report(root, out_file="class_report.csv"):
-    rows = []
-
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
-
-        for cls in package.findall("class"):
-            # Pick extension from JaCoCo
-            source_file = cls.get("sourcefilename")  # e.g. "OrderService.java"
-            class_display = source_file if source_file else cls.get("name").split("/")[-1]  
-
-            method_count = len(cls.findall("method"))
-            instr_cov = instr_total = branch_cov = branch_total = line_total = 0
-
-            for counter in cls.findall("counter"):
-                ctype = counter.get("type")
-                covered = int(counter.get("covered"))
-                missed = int(counter.get("missed"))
-                if ctype == "INSTRUCTION":
-                    instr_cov += covered; instr_total += covered + missed
-                elif ctype == "BRANCH":
-                    branch_cov += covered; branch_total += covered + missed
-                elif ctype == "LINE":
-                    line_total += covered + missed
-
-            instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-            branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-            avg_pct = round((instr_pct + branch_pct) / 2, 2)
-            status, priority = get_status(avg_pct)
-
-            rows.append([
-                pkg_name, class_display, method_count, line_total,
-                instr_pct, branch_pct, avg_pct, status, priority
-            ])
-
-    # Sort rows by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
-
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Class (with extension)", "Total Methods", "Total Lines",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
-
-    print(f"✅ Class-level report written to {out_file}")
-
-
-# ===================== Method Level =====================
-def method_report(root, out_file="method_report.csv"):
-    rows = []
-
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
-
-        for cls in package.findall("class"):
-            class_display = cls.get("sourcefilename") or cls.get("name").split("/")[-1]
-
-            for method in cls.findall("method"):
-                method_name = method.get("name")
-                line_number = method.get("line")
-                instr_cov = instr_total = branch_cov = branch_total = 0
-
-                for counter in method.findall("counter"):
-                    ctype = counter.get("type")
-                    covered = int(counter.get("covered"))
-                    missed = int(counter.get("missed"))
-                    if ctype == "INSTRUCTION":
-                        instr_cov += covered; instr_total += covered + missed
-                    elif ctype == "BRANCH":
-                        branch_cov += covered; branch_total += covered + missed
-
-                instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-                branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-                avg_pct = round((instr_pct + branch_pct) / 2, 2)
-                status, priority = get_status(avg_pct)
-
-                rows.append([
-                    pkg_name, class_display, method_name, line_number,
-                    instr_pct, branch_pct, avg_pct, status, priority
-                ])
-
-    # Sort rows by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
-
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Class (with extension)", "Method", "Line Number",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
-
-    print(f"✅ Method-level report written to {out_file}")
-
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 3:
-        print("Usage: python coverage_report.py <jacoco_xml> <output_dir>")
-        sys.exit(1)
-    xml_file = sys.argv[1]
-    output_dir = sys.argv[2]
-
-    import os
-    os.makedirs(output_dir, exist_ok=True)
-
-    tree = ET.parse(xml_file)
-    root = tree.getroot()
-
-    package_report(root, os.path.join(output_dir, "package_report.csv"))
-    class_report(root, os.path.join(output_dir, "class_report.csv"))
-    method_report(root, os.path.join(output_dir, "method_report.csv"))
-
+echo "✅ Done!"
