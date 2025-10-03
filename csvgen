@@ -1,103 +1,89 @@
 import xml.etree.ElementTree as ET
 import csv
-import os
 
-# ---------- CONFIG ----------
-JACOCO_XML = "jacoco.xml"   # path to your jacoco.xml
-OUTPUT_CSV = "coverage_report.csv"
-# ----------------------------
+# Input JaCoCo XML and output CSV
+xml_file = "jacoco.xml"
+csv_file = "package_report.csv"
 
-def get_status_and_priority(pct):
-    """Determine status & priority from avg coverage %."""
-    if pct < 20:
+# Status & priority mapping
+def get_status(avg_coverage):
+    if avg_coverage < 20:
         return "Critical", "Immediate"
-    elif pct < 60:
+    elif 20 <= avg_coverage <= 59:
         return "Poor", "High"
-    elif pct < 80:
+    elif 60 <= avg_coverage <= 79:
         return "Fair", "High"
-    elif pct < 90:
+    elif 80 <= avg_coverage <= 89:
         return "Good", "Low"
-    else:
+    else:  # >=90
         return "Excellent", "Low"
 
-def parse_counters(elem):
-    """Extract JaCoCo counters from <counter> elements."""
-    counters = {}
-    for counter in elem.findall("counter"):
-        ctype = counter.get("type")
-        missed = int(counter.get("missed"))
-        covered = int(counter.get("covered"))
-        total = missed + covered
-        pct = round((covered / total) * 100, 2) if total > 0 else 0
-        counters[ctype] = {
-            "missed": missed,
-            "covered": covered,
-            "total": total,
-            "pct": pct
-        }
-    return counters
-
+# Normalize package name
+# Keep com/imobile/pos + next 2 parts only
 def normalize_package(pkg_name):
-    """
-    Convert imobile/pos/ui/orders -> ui.orders
-    Keep only last two components if deep.
-    """
     parts = pkg_name.split("/")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])   # keep last two levels
-    return ".".join(parts)
+    if len(parts) > 5:  # com, imobile, pos + 2 more
+        return "/".join(parts[:5])
+    return "/".join(parts)
 
-def main():
-    tree = ET.parse(JACOCO_XML)
-    root = tree.getroot()
+# Parse JaCoCo XML
+tree = ET.parse(xml_file)
+root = tree.getroot()
 
-    with open(OUTPUT_CSV, "w", newline="") as f:
-        writer = csv.writer(f)
+with open(csv_file, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "Package",
+        "Total Classes",
+        "Total Methods",
+        "Total Lines",
+        "Instruction Coverage (%)",
+        "Branch Coverage (%)",
+        "Average Coverage (%)",
+        "Status",
+        "Priority"
+    ])
+
+    # Each <package> already has aggregated counters
+    for pkg in root.findall("package"):
+        pkg_name = normalize_package(pkg.get("name"))
+
+        instr_cov = instr_total = branch_cov = branch_total = 0
+        lines = methods = classes = 0
+
+        for counter in pkg.findall("counter"):
+            ctype = counter.get("type")
+            missed = int(counter.get("missed"))
+            covered = int(counter.get("covered"))
+            total = missed + covered
+
+            if ctype == "INSTRUCTION":
+                instr_cov, instr_total = covered, total
+            elif ctype == "BRANCH":
+                branch_cov, branch_total = covered, total
+            elif ctype == "LINE":
+                lines = total
+            elif ctype == "METHOD":
+                methods = total
+            elif ctype == "CLASS":
+                classes = total
+
+        # Calculate percentages
+        instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
+        branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
+        avg_pct = round((instr_pct + branch_pct) / 2, 2)
+        status, priority = get_status(avg_pct)
+
         writer.writerow([
-            "Package",
-            "Total Classes",
-            "Total Methods",
-            "Total Lines",
-            "Instruction Coverage (%)",
-            "Branch Coverage (%)",
-            "Average Coverage (%)",
-            "Status",
-            "Priority"
+            pkg_name,
+            classes,
+            methods,
+            lines,
+            instr_pct,
+            branch_pct,
+            avg_pct,
+            status,
+            priority
         ])
 
-        for pkg in root.findall("package"):
-            pkg_name = normalize_package(pkg.get("name"))
-
-            # Parse counters exactly like JaCoCo
-            counters = parse_counters(pkg)
-
-            instr_pct = counters.get("INSTRUCTION", {}).get("pct", 0)
-            branch_pct = counters.get("BRANCH", {}).get("pct", 0)
-            line_pct = counters.get("LINE", {}).get("pct", 0)
-            method_pct = counters.get("METHOD", {}).get("pct", 0)
-
-            # Define "average" as line coverage (or your choice)
-            avg_pct = line_pct  
-
-            status, priority = get_status_and_priority(avg_pct)
-
-            total_classes = counters.get("CLASS", {}).get("total", 0)
-            total_methods = counters.get("METHOD", {}).get("total", 0)
-            total_lines = counters.get("LINE", {}).get("total", 0)
-
-            writer.writerow([
-                pkg_name,
-                total_classes,
-                total_methods,
-                total_lines,
-                instr_pct,
-                branch_pct,
-                avg_pct,
-                status,
-                priority
-            ])
-
-    print(f"✅ Coverage report written to {OUTPUT_CSV}")
-
-if __name__ == "__main__":
-    main()
+print(f"✅ Package-level coverage CSV generated: {csv_file}")
