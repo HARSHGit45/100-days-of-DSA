@@ -1,177 +1,231 @@
-import xml.etree.ElementTree as ET
-import csv
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JaCoCo Coverage Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        header {
+            background: #1e88e5;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        table {
+            width: 95%;
+            margin: 1rem auto;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+        }
+        th {
+            background: #1976d2;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) { background: #f2f2f2; }
+        tr:hover { background: #e3f2fd; cursor: pointer; }
 
-xml_file = "jacoco.xml"
+        .critical { background: #ff8a80 !important; }
+        .poor { background: #ffcc80 !important; }
+        .fair { background: #fff176 !important; }
+        .good { background: #81c784 !important; }
+        .excellent { background: #4db6ac !important; }
 
-# ===================== Helpers =====================
-def get_status(avg_coverage):
-    if avg_coverage < 20:
-        return "Critical", "Immediate"
-    elif 20 <= avg_coverage <= 59:
-        return "Poor", "High"
-    elif 60 <= avg_coverage <= 79:
-        return "Fair", "High"
-    elif 80 <= avg_coverage <= 89:
-        return "Good", "Low"
-    else:
-        return "Excellent", "Low"
+        .alert {
+            text-align: center;
+            margin: 1rem auto;
+            padding: 1rem;
+            width: 95%;
+            border-radius: 5px;
+            font-weight: bold;
+            color: white;
+        }
+        .alert-critical { background: #d32f2f; }
+        .alert-poor { background: #f57c00; }
 
-# ===================== Package Level =====================
-def package_report(root, out_file="package_report.csv"):
-    rows = []
+        .breadcrumb {
+            width: 95%;
+            margin: 0 auto 1rem;
+            font-size: 0.9rem;
+            color: #555;
+        }
+        .breadcrumb span {
+            cursor: pointer;
+            color: #1e88e5;
+        }
+        .breadcrumb span:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
 
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
-        class_count = len(package.findall("class"))
-        method_count = instr_cov = instr_total = branch_cov = branch_total = line_total = 0
+<header>
+    <h1>JaCoCo Coverage Dashboard</h1>
+</header>
 
-        for cls in package.findall("class"):
-            method_count += len(cls.findall("method"))
-            for counter in cls.findall("counter"):
-                ctype = counter.get("type")
-                covered = int(counter.get("covered"))
-                missed = int(counter.get("missed"))
-                total = covered + missed
-                if ctype == "INSTRUCTION":
-                    instr_cov += covered; instr_total += total
-                elif ctype == "BRANCH":
-                    branch_cov += covered; branch_total += total
-                elif ctype == "LINE":
-                    line_total += total
+<div class="breadcrumb" id="breadcrumb">Home</div>
 
-        instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-        branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-        avg_pct = round((instr_pct + branch_pct) / 2, 2)
-        status, priority = get_status(avg_pct)
+<div id="alert"></div>
+<div id="table-container"></div>
 
-        rows.append([
-            pkg_name, class_count, method_count, line_total,
-            instr_pct, branch_pct, avg_pct, status, priority
-        ])
+<script>
+    let packageData = [];
+    let classData = [];
+    let methodData = [];
 
-    # Sort by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
+    let currentPackage = null;
+    let currentClass = null;
 
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Total Classes", "Total Methods", "Total Lines",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
+    async function loadCSV(file) {
+        const res = await fetch(file);
+        const text = await res.text();
+        const rows = text.split('\n').filter(r => r.trim() !== '');
+        const headers = rows[0].split(',');
+        return rows.slice(1).map(row => {
+            const cols = row.split(',');
+            let obj = {};
+            headers.forEach((h, i) => obj[h.trim()] = cols[i]?.trim());
+            return obj;
+        });
+    }
 
-    print(f"✅ Package-level report written to {out_file}")
+    function getCoverageClass(status) {
+        switch(status.toLowerCase()) {
+            case 'critical': return 'critical';
+            case 'poor': return 'poor';
+            case 'fair': return 'fair';
+            case 'good': return 'good';
+            case 'excellent': return 'excellent';
+            default: return '';
+        }
+    }
 
+    function showAlert(status) {
+        const alertDiv = document.getElementById('alert');
+        if(status.toLowerCase() === 'critical') {
+            alertDiv.innerHTML = `<div class="alert alert-critical">⚠ Critical coverage! Add unit tests immediately.</div>`;
+        } else if(status.toLowerCase() === 'poor') {
+            alertDiv.innerHTML = `<div class="alert alert-poor">⚠ Poor coverage! Consider adding more tests.</div>`;
+        } else {
+            alertDiv.innerHTML = '';
+        }
+    }
 
-# ===================== Class Level =====================
-def class_report(root, out_file="class_report.csv"):
-    rows = []
+    function renderTable(data, level) {
+        const container = document.getElementById('table-container');
+        container.innerHTML = '';
 
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
+        if(data.length === 0) {
+            container.innerHTML = '<p style="text-align:center;">No data to display</p>';
+            return;
+        }
 
-        for cls in package.findall("class"):
-            # Pick extension from JaCoCo
-            source_file = cls.get("sourcefilename")  # e.g. "OrderService.java"
-            class_display = source_file if source_file else cls.get("name").split("/")[-1]  
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
 
-            method_count = len(cls.findall("method"))
-            instr_cov = instr_total = branch_cov = branch_total = line_total = 0
+        Object.keys(data[0]).forEach(h => {
+            const th = document.createElement('th');
+            th.innerText = h;
+            headerRow.appendChild(th);
+        });
 
-            for counter in cls.findall("counter"):
-                ctype = counter.get("type")
-                covered = int(counter.get("covered"))
-                missed = int(counter.get("missed"))
-                if ctype == "INSTRUCTION":
-                    instr_cov += covered; instr_total += covered + missed
-                elif ctype == "BRANCH":
-                    branch_cov += covered; branch_total += covered + missed
-                elif ctype == "LINE":
-                    line_total += covered + missed
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
 
-            instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-            branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-            avg_pct = round((instr_pct + branch_pct) / 2, 2)
-            status, priority = get_status(avg_pct)
+        const tbody = document.createElement('tbody');
 
-            rows.append([
-                pkg_name, class_display, method_count, line_total,
-                instr_pct, branch_pct, avg_pct, status, priority
-            ])
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            Object.values(row).forEach(val => {
+                const td = document.createElement('td');
+                td.innerText = val;
+                tr.appendChild(td);
+            });
 
-    # Sort rows by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
+            tr.classList.add(getCoverageClass(row['Status']));
 
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Class (with extension)", "Total Methods", "Total Lines",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
+            if(level === 'package') {
+                tr.addEventListener('click', () => {
+                    currentPackage = row['Package'];
+                    const filteredClasses = classData.filter(c => c['Package'] === currentPackage);
+                    updateBreadcrumb();
+                    showAlert(filteredClasses.reduce((acc, c) => Math.min(acc, parseFloat(c['Instruction Coverage (%)'])), 100) < 20 ? 'critical' : '');
+                    renderTable(filteredClasses, 'class');
+                });
+            } else if(level === 'class') {
+                tr.addEventListener('click', () => {
+                    currentClass = row['Class (with extension)'];
+                    const filteredMethods = methodData.filter(m => m['Class (with extension)'] === currentClass && m['Package'] === currentPackage);
+                    updateBreadcrumb();
+                    showAlert(filteredMethods.reduce((acc, m) => Math.min(acc, parseFloat(m['Instruction Coverage (%)'])), 100) < 20 ? 'critical' : '');
+                    renderTable(filteredMethods, 'method');
+                });
+            }
 
-    print(f"✅ Class-level report written to {out_file}")
+            tbody.appendChild(tr);
+        });
 
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
 
-# ===================== Method Level =====================
-def method_report(root, out_file="method_report.csv"):
-    rows = []
+    function updateBreadcrumb() {
+        const bc = document.getElementById('breadcrumb');
+        let html = `<span onclick="goHome()">Home</span>`;
+        if(currentPackage) html += ` > <span onclick="showPackage()"> ${currentPackage} </span>`;
+        if(currentClass) html += ` > <span onclick="showClass()"> ${currentClass} </span>`;
+        bc.innerHTML = html;
+    }
 
-    for package in root.findall("package"):
-        pkg_name = package.get("name")
+    function goHome() {
+        currentPackage = null;
+        currentClass = null;
+        showAlert('');
+        renderTable(packageData, 'package');
+        updateBreadcrumb();
+    }
 
-        for cls in package.findall("class"):
-            class_display = cls.get("sourcefilename") or cls.get("name").split("/")[-1]
+    function showPackage() {
+        if(!currentPackage) return;
+        const filteredClasses = classData.filter(c => c['Package'] === currentPackage);
+        showAlert(filteredClasses.reduce((acc, c) => Math.min(acc, parseFloat(c['Instruction Coverage (%)'])), 100) < 20 ? 'critical' : '');
+        currentClass = null;
+        renderTable(filteredClasses, 'class');
+        updateBreadcrumb();
+    }
 
-            for method in cls.findall("method"):
-                method_name = method.get("name")
-                line_number = method.get("line")
-                instr_cov = instr_total = branch_cov = branch_total = 0
+    function showClass() {
+        if(!currentPackage || !currentClass) return;
+        const filteredMethods = methodData.filter(m => m['Class (with extension)'] === currentClass && m['Package'] === currentPackage);
+        showAlert(filteredMethods.reduce((acc, m) => Math.min(acc, parseFloat(m['Instruction Coverage (%)'])), 100) < 20 ? 'critical' : '');
+        renderTable(filteredMethods, 'method');
+        updateBreadcrumb();
+    }
 
-                for counter in method.findall("counter"):
-                    ctype = counter.get("type")
-                    covered = int(counter.get("covered"))
-                    missed = int(counter.get("missed"))
-                    if ctype == "INSTRUCTION":
-                        instr_cov += covered; instr_total += covered + missed
-                    elif ctype == "BRANCH":
-                        branch_cov += covered; branch_total += covered + missed
+    async function init() {
+        packageData = await loadCSV('package_report.csv');
+        classData = await loadCSV('class_report.csv');
+        methodData = await loadCSV('method_report.csv');
 
-                instr_pct = round((instr_cov / instr_total) * 100, 2) if instr_total else 0
-                branch_pct = round((branch_cov / branch_total) * 100, 2) if branch_total else 0
-                avg_pct = round((instr_pct + branch_pct) / 2, 2)
-                status, priority = get_status(avg_pct)
+        renderTable(packageData, 'package');
+    }
 
-                rows.append([
-                    pkg_name, class_display, method_name, line_number,
-                    instr_pct, branch_pct, avg_pct, status, priority
-                ])
+    init();
+</script>
 
-    # Sort rows by instruction coverage ascending
-    rows.sort(key=lambda x: x[4])
-
-    # Write CSV
-    with open(out_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Package", "Class (with extension)", "Method", "Line Number",
-            "Instruction Coverage (%)", "Branch Coverage (%)",
-            "Average Coverage (%)", "Status", "Priority"
-        ])
-        writer.writerows(rows)
-
-    print(f"✅ Method-level report written to {out_file}")
-
-
-# ===================== Run All =====================
-if __name__ == "__main__":
-    tree = ET.parse(xml_file)
-    root = tree.getroot()
-
-    package_report(root)
-    class_report(root)
-    method_report(root)
+</body>
+</html>
