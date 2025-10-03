@@ -167,11 +167,21 @@ def method_report(root, out_file="method_report.csv"):
     print(f"✅ Method-level report written to {out_file}")
 
 
-# ===================== Run All =====================
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 3:
+        print("Usage: python coverage_report.py <jacoco_xml> <output_dir>")
+        sys.exit(1)
+    xml_file = sys.argv[1]
+    output_dir = sys.argv[2]
+
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
-    package_report(root)
-    class_report(root)
-    method_report(root)
+    package_report(root, os.path.join(output_dir, "package_report.csv"))
+    class_report(root, os.path.join(output_dir, "class_report.csv"))
+    method_report(root, os.path.join(output_dir, "method_report.csv"))
+
