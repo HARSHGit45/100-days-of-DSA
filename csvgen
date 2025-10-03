@@ -32,10 +32,16 @@ package_data = defaultdict(lambda: {
 
 # Function to normalize package path
 def normalize_package(pkg_name):
-    # Split by / and ignore common root parts (like com/imobile/pos)
     parts = pkg_name.split("/")
-    # Keep last two levels for logical sub-package (like ui/orders)
-    return "/".join(parts[-2:]) if len(parts) >= 2 else pkg_name
+    try:
+        # Find index of base
+        base_index = parts.index("pos")  # anchor after "com/imobile/pos"
+        # Keep "com.imobile.pos" + next 2 levels max
+        allowed_parts = parts[:base_index+1+2]  # pos + 2 extra levels
+    except ValueError:
+        # If "pos" not found, fallback: just take last 3 levels
+        allowed_parts = parts[-3:]
+    return ".".join(allowed_parts)
 
 # Process each class
 for cls in root.findall(".//class"):
