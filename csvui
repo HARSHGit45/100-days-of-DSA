@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Modern JaCoCo Dashboard</title>
 <style>
-    /* Reset & fonts */
     body { font-family: 'Inter', sans-serif; background: #f4f6f9; margin: 0; padding: 0; }
     header { background: #1976d2; color: white; text-align: center; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
     h1 { margin: 0; font-weight: 500; }
@@ -13,6 +12,14 @@
     .breadcrumb { padding: 0.75rem 1rem; color: #555; font-size: 0.9rem; }
     .breadcrumb span { cursor: pointer; color: #1976d2; margin-right: 5px; }
     .breadcrumb span:hover { text-decoration: underline; }
+
+    /* Tabs */
+    .tabs { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
+    .tab {
+        background: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: background 0.2s, transform 0.2s;
+    }
+    .tab.active { background: #1976d2; color: white; transform: translateY(-2px); }
 
     #summary { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; margin: 1rem; }
     .card {
@@ -23,10 +30,18 @@
     .card h2 { margin: 0.25rem 0; font-size: 2rem; }
     .card p { margin: 0; font-size: 0.9rem; color: #666; }
 
+    /* Search */
+    .search-container { width: 95%; margin: 0 auto; text-align: right; }
+    .search-container input {
+        padding: 0.5rem; width: 250px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 0.5rem;
+    }
+
     table { width: 95%; margin: 1rem auto; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     th, td { padding: 0.75rem 1rem; text-align: left; }
-    th { background: #1976d2; color: white; position: sticky; top: 0; }
+    th { background: #1976d2; color: white; position: sticky; top: 0; cursor: pointer; }
     tr:hover { background: #e3f2fd; cursor: pointer; transition: background 0.2s; }
+    th.sort-asc::after { content: " ▲"; font-size: 0.8rem; }
+    th.sort-desc::after { content: " ▼"; font-size: 0.8rem; }
 
     .progress-container { background: #eee; border-radius: 10px; height: 12px; overflow: hidden; }
     .progress-bar {
@@ -49,6 +64,7 @@
 
     @media(max-width: 768px) {
         th, td { padding: 0.5rem; font-size: 0.85rem; }
+        .search-container input { width: 100%; }
     }
 </style>
 </head>
@@ -60,13 +76,26 @@
 
 <div class="breadcrumb" id="breadcrumb">Home</div>
 
+<div class="tabs">
+    <div class="tab active" onclick="filterTab('all')">All Packages</div>
+    <div class="tab" onclick="filterTab('top')">Top Performers</div>
+    <div class="tab" onclick="filterTab('attention')">Needs Attention</div>
+</div>
+
 <div id="summary"></div>
 <div id="alert"></div>
+
+<div class="search-container">
+    <input type="text" id="searchBox" placeholder="Search...">
+</div>
+
 <div id="table-container"></div>
 
 <script>
 let packageData = [], classData = [], methodData = [];
 let currentPackage = null, currentClass = null;
+let currentTab = 'all';
+let currentSort = { key: null, order: 'asc' };
 
 // ================= CSV Loader =================
 async function loadCSV(file) {
@@ -113,7 +142,38 @@ function updateBreadcrumb() {
     bc.innerHTML = html;
 }
 
-// ================= Render Summary Cards =================
+// ================= Tabs =================
+function filterTab(tab){
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    currentTab = tab;
+    goHome();
+}
+
+// ================= Search Filter =================
+function applySearchFilter(data){
+    const query = document.getElementById('searchBox').value.toLowerCase();
+    if(!query) return data;
+    return data.filter(row => Object.values(row).some(val => val?.toLowerCase().includes(query)));
+}
+
+// ================= Sorting =================
+function sortData(data, key){
+    if(currentSort.key === key){
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.key = key;
+        currentSort.order = 'asc';
+    }
+    const order = currentSort.order === 'asc' ? 1 : -1;
+    return data.sort((a,b)=>{
+        let x = a[key] || '', y = b[key] || '';
+        if(!isNaN(x) && !isNaN(y)) return (parseFloat(x)-parseFloat(y))*order;
+        return x.localeCompare(y)*order;
+    });
+}
+
+// ================= Render Summary =================
 function renderSummary() {
     const summary = document.getElementById('summary');
     summary.innerHTML = '';
@@ -143,6 +203,15 @@ function renderTable(data, level) {
     const container = document.getElementById('table-container');
     container.innerHTML = '';
 
+    // Apply Tab Filter
+    if(level === 'package'){
+        if(currentTab === 'top') data = data.filter(p => parseFloat(p['Instruction Coverage (%)']) >= 80);
+        else if(currentTab === 'attention') data = data.filter(p => parseFloat(p['Instruction Coverage (%)']) < 40);
+    }
+
+    // Apply Search Filter
+    data = applySearchFilter(data);
+
     if(data.length === 0){
         container.innerHTML = '<p style="text-align:center;">No data to display</p>';
         return;
@@ -154,6 +223,12 @@ function renderTable(data, level) {
     Object.keys(data[0]).forEach(h => {
         const th = document.createElement('th');
         th.innerText = h;
+        th.addEventListener('click', () => {
+            data = sortData(data, h);
+            renderTable(data, level);
+            th.classList.toggle('sort-asc', currentSort.order === 'asc');
+            th.classList.toggle('sort-desc', currentSort.order === 'desc');
+        });
         headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -169,7 +244,6 @@ function renderTable(data, level) {
             let val = row[key];
 
             if(key.toLowerCase().includes('coverage')) {
-                // add progress bar
                 td.innerHTML = `<div class="progress-container">
                     <div class="progress-bar ${getCoverageClass(row['Status'])}" style="width:${val}%">${val}%</div>
                 </div>`;
@@ -183,7 +257,6 @@ function renderTable(data, level) {
                 currentPackage = row['Package'];
                 currentClass = null;
                 const filtered = classData.filter(c => c['Package'] === currentPackage);
-                showAlert(filtered.reduce((acc,c)=>Math.min(acc, parseFloat(c['Instruction Coverage (%)'])),100)<20?'critical':'');
                 renderTable(filtered,'class');
                 updateBreadcrumb();
             });
@@ -191,7 +264,6 @@ function renderTable(data, level) {
             tr.addEventListener('click', () => {
                 currentClass = row['Class (with extension)'];
                 const filtered = methodData.filter(m => m['Package']===currentPackage && m['Class (with extension)']===currentClass);
-                showAlert(filtered.reduce((acc,m)=>Math.min(acc, parseFloat(m['Instruction Coverage (%)'])),100)<20?'critical':'');
                 renderTable(filtered,'method');
                 updateBreadcrumb();
             });
@@ -207,17 +279,14 @@ function renderTable(data, level) {
 // ================= Navigation =================
 function goHome(){
     currentPackage = null; currentClass = null;
-    showAlert('');
     renderTable(packageData,'package');
     updateBreadcrumb();
 }
 
 function showPackage(){
     if(!currentPackage) return;
-    currentClass = null;
     const filtered = classData.filter(c=>c['Package']===currentPackage);
     renderTable(filtered,'class');
-    showAlert(filtered.reduce((acc,c)=>Math.min(acc, parseFloat(c['Instruction Coverage (%)'])),100)<20?'critical':'');
     updateBreadcrumb();
 }
 
@@ -225,7 +294,6 @@ function showClass(){
     if(!currentPackage || !currentClass) return;
     const filtered = methodData.filter(m=>m['Package']===currentPackage && m['Class (with extension)']===currentClass);
     renderTable(filtered,'method');
-    showAlert(filtered.reduce((acc,m)=>Math.min(acc, parseFloat(m['Instruction Coverage (%)'])),100)<20?'critical':'');
     updateBreadcrumb();
 }
 
@@ -234,9 +302,9 @@ async function init(){
     packageData = await loadCSV('package_report.csv');
     classData = await loadCSV('class_report.csv');
     methodData = await loadCSV('method_report.csv');
-
     renderSummary();
     renderTable(packageData,'package');
+    document.getElementById('searchBox').addEventListener('input', () => renderTable(packageData,'package'));
 }
 
 init();
