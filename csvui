@@ -371,3 +371,102 @@ init();
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- Loader Overlay -->
+<div id="loader">
+  <div class="spinner"></div>
+  <p>Please wait, loading data...</p>
+</div>
+
+
+
+
+
+
+
+/* === LOADER STYLING === */
+#loader {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(255,255,255,0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+  color: #1976d2;
+  z-index: 9999;
+}
+
+.spinner {
+  border: 4px solid #e0e0e0;
+  border-top: 4px solid #1976d2;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ================= Init =================
+async function init() {
+    const loader = document.getElementById('loader');
+    loader.style.display = 'flex'; // Show loader
+
+    try {
+        packageData = await loadCSV('package_report.csv');
+        classData = await loadCSV('class_report.csv');
+        methodData = await loadCSV('method_report.csv');
+
+        renderSummary();
+        renderTable(packageData, 'package');
+        document.getElementById('searchBox').addEventListener('input', () => renderTable(packageData, 'package'));
+    } catch (error) {
+        console.error("Error loading CSVs:", error);
+        document.getElementById('table-container').innerHTML = '<p style="text-align:center;color:red;">Error loading data.</p>';
+    } finally {
+        loader.style.display = 'none'; // Hide loader after all data loaded
+    }
+}
+
+init();
+
