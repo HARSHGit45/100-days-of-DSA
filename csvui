@@ -274,12 +274,20 @@ function renderTable(data, level) {
     Object.keys(data[0]).forEach(h => {
         const th = document.createElement('th');
         th.innerText = h;
-        th.addEventListener('click', () => {
-            data = sortData(data, h);
-            renderTable(data, level);
-            th.classList.toggle('sort-asc', currentSort.order === 'asc');
-            th.classList.toggle('sort-desc', currentSort.order === 'desc');
-        });
+       th.addEventListener('click', () => {
+    data = sortData(data, h);
+    renderTable(data, level);
+
+    // Remove existing sort icons from all headers
+    document.querySelectorAll('th').forEach(header => {
+        header.classList.remove('sort-asc', 'sort-desc');
+    });
+
+    // Add the correct icon to the currently clicked header
+    if (currentSort.order === 'asc') th.classList.add('sort-asc');
+    else th.classList.add('sort-desc');
+});
+
         headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
