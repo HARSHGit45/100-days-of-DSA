@@ -470,3 +470,64 @@ async function init() {
 
 init();
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ let totalMissed = 0, totalCovered = 0;
+    packageData.forEach(p => {
+        totalMissed += parseInt(p['Missed Instructions'] || 0);
+        totalCovered += parseInt(p['Covered Instructions'] || 0);
+    });
+
+    let totalCoverage = 0;
+    if (totalCovered + totalMissed > 0) {
+        totalCoverage = ((totalCovered / (totalCovered + totalMissed)) * 100).toFixed(2);
+    }
+
+    const cards = [
+        {title: 'Total Packages', value: totalPackages},
+        {title: 'Total Classes', value: totalClasses},
+        {title: 'Critical Packages', value: criticalPackages},
+        {title: 'Average Instruction Coverage', value: avgCoverage + '%'},
+        {title: 'Total Project Coverage', value: totalCoverage + '%'} // 👈 Added new card
+    ];
+
