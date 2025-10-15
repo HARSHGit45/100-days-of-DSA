@@ -95,11 +95,19 @@
 
 
 body {
-    font-family: 'Inter', sans-serif;
-    background: #f4f6f9;
-    margin: 0;
-    padding: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f4f5fa;
+  margin: 0;
+  padding: 0;
+  color: #222;
 }
+
+.container {
+  width: 90%;
+  max-width: 1200px;
+  margin: 2rem auto;
+}
+
 
 header {
     background: #1976d2;
@@ -110,8 +118,8 @@ header {
 }
 
 h1 {
-    margin: 0;
-    font-weight: 500;
+  text-align: center;
+  color: #3c4b64;
 }
 
 .breadcrumb {
@@ -153,24 +161,23 @@ h1 {
     transform: translateY(-2px);
 }
 
-#summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    justify-content: center;
-    margin: 1rem;
+.summary {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
 }
 
 .card {
-    background: white;
-    padding: 1rem 1.5rem;
-    border-radius: 12px;
-    flex: 1 1 200px;
-    min-width: 200px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    text-align: center;
-    transition: transform 0.2s;
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  width: 280px;
+  text-align: center;
 }
+
+
 
 .card:hover {
     transform: translateY(-3px);
@@ -182,10 +189,12 @@ h1 {
 }
 
 .card p {
-    margin: 0;
-    font-size: 0.9rem;
-    color: #666;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #0078d7;
 }
+
+
 
 /* Charts column (compact stacked small charts) */
 .charts-column {
@@ -373,7 +382,18 @@ th.sort-desc::after {
     .small-chart { width: 95%; }
 }
 
+.chart-section {
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
 
+canvas {
+  max-width: 100%;
+  height: 400px !important;
+}
 
 
 
@@ -464,11 +484,9 @@ function filterTab(tab, evt) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     if (evt && evt.target) evt.target.classList.add('active');
     currentTab = tab;
-    // on tab change go to home at package view
     goHome();
 }
 
-// robust field lookup helper (case-insensitive / fuzzy)
 function findFieldKey(obj, regex) {
     if (!obj) return null;
     const keys = Object.keys(obj);
@@ -514,7 +532,6 @@ function sortData(data, key) {
 
 // ================= Summary & Charts =================
 function computeStats(data) {
-    // find appropriate field names (case-variants)
     const coveredKey = findFieldKey(data[0] || {}, /covered\s*instructions?/i) || findFieldKey(data[0] || {}, /covered/i);
     const missedKey = findFieldKey(data[0] || {}, /missed\s*instructions?/i) || findFieldKey(data[0] || {}, /missed/i);
     const instructionKey = findFieldKey(data[0] || {}, /instruction\s*coverage/i) || findFieldKey(data[0] || {}, /instruction/i);
@@ -550,14 +567,17 @@ function renderSummary() {
     const totalClasses = classData.length;
     const criticalPackages = packageData.filter(p => String(p['Status'] || '').toLowerCase() === 'critical').length;
 
-    // For project total coverage use packageData totals (preferred) — fallback to summary.csv if available
-    const overallStats = packageData.length ? computeStats(packageData) : (summaryData[0] ? {
-        totalCovered: parseNumberSafe(summaryData[0]['Covered Instructions']),
-        totalMissed: parseNumberSafe(summaryData[0]['Missed Instructions']),
-        totalCoverage: parseNumberSafe(summaryData[0]['Total Coverage (%)']) || 0,
-        avgInstruction: parseNumberSafe(summaryData[0]['Instruction Coverage (%)']) || 0,
-        avgBranch: parseNumberSafe(summaryData[0]['Branch Coverage (%)']) || 0
-    } : { totalCoverage: 0, avgInstruction: 0, avgBranch: 0 });
+    // ✅ Use summary.csv for totalCoverage
+    let overallStats = { totalCoverage: 0, avgInstruction: 0, avgBranch: 0 };
+    if (summaryData[0]) {
+        overallStats = {
+            totalCovered: parseNumberSafe(summaryData[0]['Covered Instructions']),
+            totalMissed: parseNumberSafe(summaryData[0]['Missed Instructions']),
+            totalCoverage: parseNumberSafe(summaryData[0]['Total Coverage (%)']) || 0,
+            avgInstruction: parseNumberSafe(summaryData[0]['Instruction Coverage (%)']) || 0,
+            avgBranch: parseNumberSafe(summaryData[0]['Branch Coverage (%)']) || 0
+        };
+    }
 
     const cards = [
         { title: 'Total Packages', value: totalPackages },
@@ -573,74 +593,47 @@ function renderSummary() {
         summary.appendChild(div);
     });
 
-    // render four small charts using packageData by default or currentViewData if set
-    const chartBase = currentLevel === 'package' && currentPackage ? classData.filter(c => c['Package'] === currentPackage) :
-                      currentLevel === 'class' && currentClass ? methodData.filter(m => m['Package'] === currentPackage && m['Class (with extension)'] === currentClass) :
-                      packageData;
+    // charts
+    const chartBase =
+        currentLevel === 'package' && currentPackage ? classData.filter(c => c['Package'] === currentPackage) :
+        currentLevel === 'class' && currentClass ? methodData.filter(m => m['Package'] === currentPackage && m['Class (with extension)'] === currentClass) :
+        packageData;
 
     renderSmallCharts(chartBase);
 }
 
-// small charts: package status distribution, instruction, branch, average
+// ================= Small Charts =================
 function renderSmallCharts(baseData) {
-    // ensure baseData is an array
     baseData = Array.isArray(baseData) ? baseData : (packageData || []);
 
-    // compute stats for baseData
     const stats = computeStats(baseData);
 
-    // Package Status distribution (use original packageData when project-level)
+    // Package status distribution
     const pkgData = (currentLevel === 'package' && currentPackage) ? classData.filter(c => c['Package'] === currentPackage) : packageData;
     const statuses = ['Critical', 'Poor', 'Fair', 'Good', 'Excellent'];
     const counts = statuses.map(s => pkgData.filter(p => String(p['Status'] || '').toLowerCase() === s.toLowerCase()).length);
 
-    // destroy previous charts safely
-    Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) { } });
+    // destroy previous charts
+    Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
     charts = {};
 
-    // package chart (pie)
-    const pkgCtx = document.getElementById('packageChart').getContext('2d');
-    charts.package = new Chart(pkgCtx, {
-        type: 'pie',
-        data: {
-            labels: statuses,
-            datasets: [{ data: counts, backgroundColor: ['#e53935', '#fb8c00', '#fbc02d', '#43a047', '#009688'] }]
-        },
-        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
-    });
-
-    // instruction chart (doughnut) -> covered vs missed using baseData totals
-    const instrCtx = document.getElementById('instructionChart').getContext('2d');
-    charts.instruction = new Chart(instrCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Covered', 'Missed'],
-            datasets: [{ data: [stats.totalCoverage, Math.max(0, 100 - stats.totalCoverage)], backgroundColor: ['#43a047', '#e53935'] }]
-        },
-        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
-    });
-
-    // branch chart (doughnut) -> avg branch coverage vs remaining
-    const branchCtx = document.getElementById('branchChart').getContext('2d');
-    charts.branch = new Chart(branchCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Covered', 'Remaining'],
-            datasets: [{ data: [stats.avgBranch, Math.max(0, 100 - stats.avgBranch)], backgroundColor: ['#009688', '#ef5350'] }]
-        },
-        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
-    });
-
-    // average chart (doughnut)
-    const avgCtx = document.getElementById('averageChart').getContext('2d');
-    charts.average = new Chart(avgCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Average', 'Remaining'],
-            datasets: [{ data: [stats.avgInstruction, Math.max(0, 100 - stats.avgInstruction)], backgroundColor: ['#5c6bc0', '#c5cae9'] }]
-        },
-        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
-    });
+    // check if chart canvas exist
+    if (document.getElementById('packageChart')) {
+        const pkgCtx = document.getElementById('packageChart').getContext('2d');
+        charts.package = new Chart(pkgCtx, { type: 'pie', data: { labels: statuses, datasets: [{ data: counts, backgroundColor: ['#e53935','#fb8c00','#fbc02d','#43a047','#009688'] }] }, options: { plugins: { legend: { display: false } }, maintainAspectRatio: false } });
+    }
+    if (document.getElementById('instructionChart')) {
+        const instrCtx = document.getElementById('instructionChart').getContext('2d');
+        charts.instruction = new Chart(instrCtx, { type: 'doughnut', data: { labels: ['Covered','Missed'], datasets: [{ data: [stats.totalCoverage, Math.max(0, 100 - stats.totalCoverage)], backgroundColor: ['#43a047','#e53935'] }] }, options: { plugins: { legend: { display: false } }, maintainAspectRatio: false } });
+    }
+    if (document.getElementById('branchChart')) {
+        const branchCtx = document.getElementById('branchChart').getContext('2d');
+        charts.branch = new Chart(branchCtx, { type: 'doughnut', data: { labels: ['Covered','Remaining'], datasets: [{ data: [stats.avgBranch, Math.max(0,100-stats.avgBranch)], backgroundColor: ['#009688','#ef5350'] }] }, options: { plugins: { legend: { display: false } }, maintainAspectRatio: false } });
+    }
+    if (document.getElementById('averageChart')) {
+        const avgCtx = document.getElementById('averageChart').getContext('2d');
+        charts.average = new Chart(avgCtx, { type: 'doughnut', data: { labels: ['Average','Remaining'], datasets: [{ data: [stats.avgInstruction, Math.max(0,100-stats.avgInstruction)], backgroundColor: ['#5c6bc0','#c5cae9'] }] }, options: { plugins: { legend: { display: false } }, maintainAspectRatio: false } });
+    }
 }
 
 // ================= Render Table =================
@@ -650,19 +643,15 @@ function renderTable(data, level) {
     const container = document.getElementById('table-container');
     container.innerHTML = '';
 
-    // Apply Tab Filter at package level
+    // tab filter at package level
     if (level === 'package') {
-        if (currentTab === 'top') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)'] || p['Instruction Coverage %'] || p['Instruction Coverage'] || p['Instruction Coverage (%)']) >= 80);
-        else if (currentTab === 'attention') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)'] || p['Instruction Coverage %'] || p['Instruction Coverage'] || p['Instruction Coverage (%)']) < 40);
+        if (currentTab === 'top') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)']) >= 80);
+        else if (currentTab === 'attention') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)']) < 40);
     }
 
-    // Apply Search Filter (search should apply to currently shown dataset)
     data = applySearchFilter(data);
 
-    if (data.length === 0) {
-        container.innerHTML = '<p style="text-align:center;">No data to display</p>';
-        return;
-    }
+    if (!data.length) { container.innerHTML = '<p style="text-align:center;">No data to display</p>'; return; }
 
     const table = document.createElement('table');
     const thead = document.createElement('thead');
@@ -673,13 +662,10 @@ function renderTable(data, level) {
         const th = document.createElement('th');
         th.innerText = h;
         th.addEventListener('click', () => {
-            // sort current displayed data
             data = sortData(data, h);
             renderTable(data, level);
-
-            // visual sort markers
-            document.querySelectorAll('th').forEach(header => header.classList.remove('sort-asc', 'sort-desc'));
-            if (currentSort.order === 'asc') th.classList.add('sort-asc'); else th.classList.add('sort-desc');
+            document.querySelectorAll('th').forEach(header => header.classList.remove('sort-asc','sort-desc'));
+            th.classList.add(currentSort.order === 'asc' ? 'sort-asc' : 'sort-desc');
         });
         headerRow.appendChild(th);
     });
@@ -689,28 +675,24 @@ function renderTable(data, level) {
     const tbody = document.createElement('tbody');
     data.forEach(row => {
         const tr = document.createElement('tr');
-
         keys.forEach(key => {
             const td = document.createElement('td');
             const val = row[key] ?? '';
             if (key.toLowerCase().includes('coverage')) {
-                // numeric coverage cell
                 const numeric = parseNumberSafe(val);
-                td.innerHTML = `<div class="progress-container">
-                    <div class="progress-bar ${getCoverageClass(row['Status'] || '')}" style="width:${numeric}%">${numeric}%</div>
-                </div>`;
+                td.innerHTML = `<div class="progress-container"><div class="progress-bar ${getCoverageClass(row['Status']||'')}" style="width:${numeric}%">${numeric}%</div></div>`;
             } else td.innerText = val;
             tr.appendChild(td);
         });
 
-        // row click drill-down
+        // drill-down click
         if (level === 'package') {
             tr.addEventListener('click', () => {
                 currentPackage = row['Package'];
                 currentClass = null;
                 const filtered = classData.filter(c => c['Package'] === currentPackage);
                 updateBreadcrumb();
-                renderSummary();              // update cards + charts for this package (class-level base)
+                renderSummary();
                 renderTable(filtered, 'class');
             });
         } else if (level === 'class') {
@@ -718,7 +700,7 @@ function renderTable(data, level) {
                 currentClass = row['Class (with extension)'] || row['Class'] || row['ClassName'];
                 const filtered = methodData.filter(m => m['Package'] === currentPackage && (m['Class (with extension)'] === currentClass || m['Class'] === currentClass));
                 updateBreadcrumb();
-                renderSummary();              // update cards + charts for this class (method-level base)
+                renderSummary();
                 renderTable(filtered, 'method');
             });
         }
@@ -764,22 +746,20 @@ async function init() {
         methodData = await loadCSV('method_report.csv');
         summaryData = await loadCSV('summary.csv');
 
-        // initial render
         renderSummary();
         renderTable(packageData, 'package');
 
-        // search input handler - context aware
         document.getElementById('searchBox').addEventListener('input', () => {
             const q = document.getElementById('searchBox').value.toLowerCase().trim();
             let filtered = [];
             if (currentLevel === 'package') {
-                filtered = packageData.filter(p => Object.values(p).some(v => String(v || '').toLowerCase().includes(q)));
+                filtered = packageData.filter(p => Object.values(p).some(v => String(v||'').toLowerCase().includes(q)));
                 renderTable(filtered, 'package');
             } else if (currentLevel === 'class') {
-                filtered = classData.filter(c => c['Package'] === currentPackage && Object.values(c).some(v => String(v || '').toLowerCase().includes(q)));
+                filtered = classData.filter(c => c['Package']===currentPackage && Object.values(c).some(v=>String(v||'').toLowerCase().includes(q)));
                 renderTable(filtered, 'class');
             } else if (currentLevel === 'method') {
-                filtered = methodData.filter(m => m['Package'] === currentPackage && (m['Class (with extension)'] === currentClass || m['Class'] === currentClass) && Object.values(m).some(v => String(v || '').toLowerCase().includes(q)));
+                filtered = methodData.filter(m => m['Package']===currentPackage && (m['Class (with extension)']===currentClass||m['Class']===currentClass) && Object.values(m).some(v=>String(v||'').toLowerCase().includes(q)));
                 renderTable(filtered, 'method');
             }
         });
