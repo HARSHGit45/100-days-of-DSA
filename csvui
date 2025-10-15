@@ -1,43 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JaCoCo Coverage Dashboard</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PosAndroid Dashboard</title>
+    <link href="style.css" rel="stylesheet" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
-  <header>
-    <h1 id="homeTitle">📊 JaCoCo Coverage Dashboard</h1>
-    <input type="text" id="searchBox" placeholder="Search...">
-  </header>
 
-  <section id="summary"></section>
+    <header>
+        <h1>PosAndroid JaCoCo Coverage Dashboard</h1>
+    </header>
 
-  <section id="chartsContainer">
-    <div class="chart-card">
-      <canvas id="packageChart"></canvas>
-      <p>Package Status Distribution</p>
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Please wait, loading data...</p>
     </div>
-    <div class="chart-card">
-      <canvas id="instructionChart"></canvas>
-      <p>Instruction Coverage</p>
-    </div>
-    <div class="chart-card">
-      <canvas id="branchChart"></canvas>
-      <p>Branch Coverage</p>
-    </div>
-    <div class="chart-card">
-      <canvas id="averageChart"></canvas>
-      <p>Average Coverage</p>
-    </div>
-  </section>
 
-  <section id="tableContainer"></section>
+    <div class="breadcrumb" id="breadcrumb">Home</div>
 
-  <script src="script.js"></script>
+    <div class="tabs">
+        <div class="tab active" onclick="filterTab('all', event)">All Packages</div>
+        <div class="tab" onclick="filterTab('top', event)">Top Performers</div>
+        <div class="tab" onclick="filterTab('attention', event)">Needs Attention</div>
+    </div>
+
+    <div id="summary"></div>
+    <div id="alert"></div>
+
+    <div class="charts-column">
+        <!-- four compact charts stacked in the same column (responsive) -->
+        <div class="small-chart">
+            <canvas id="packageChart" width="220" height="140"></canvas>
+            <p>Package Status</p>
+        </div>
+        <div class="small-chart">
+            <canvas id="instructionChart" width="220" height="140"></canvas>
+            <p>Instruction Coverage</p>
+        </div>
+        <div class="small-chart">
+            <canvas id="branchChart" width="220" height="140"></canvas>
+            <p>Branch Coverage</p>
+        </div>
+        <div class="small-chart">
+            <canvas id="averageChart" width="220" height="140"></canvas>
+            <p>Average Coverage</p>
+        </div>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="searchBox" placeholder="Search..." />
+    </div>
+
+    <div id="table-container"></div>
+
+    <script src="script.js"></script>
 </body>
+
 </html>
 
 
@@ -59,340 +82,713 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 body {
-  font-family: 'Segoe UI', sans-serif;
-  background: #f4f7fb;
-  margin: 0;
-  padding: 0;
+    font-family: 'Inter', sans-serif;
+    background: #f4f6f9;
+    margin: 0;
+    padding: 0;
 }
 
 header {
-  background: #283593;
-  color: white;
-  padding: 15px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
+    background: #1976d2;
+    color: white;
+    text-align: center;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-header h1 {
-  cursor: pointer;
+h1 {
+    margin: 0;
+    font-weight: 500;
 }
 
-header input {
-  padding: 8px;
-  width: 200px;
-  border-radius: 6px;
-  border: none;
-  outline: none;
+.breadcrumb {
+    padding: 0.75rem 1rem;
+    color: #555;
+    font-size: 0.9rem;
+}
+
+.breadcrumb span {
+    cursor: pointer;
+    color: #1976d2;
+    margin-right: 5px;
+}
+
+.breadcrumb span:hover {
+    text-decoration: underline;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.tab {
+    background: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: background 0.2s, transform 0.2s;
+}
+
+.tab.active {
+    background: #1976d2;
+    color: white;
+    transform: translateY(-2px);
 }
 
 #summary {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 15px;
-  padding: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+    margin: 1rem;
 }
 
-.summary-card {
-  background: white;
-  padding: 15px 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  text-align: center;
-  width: 180px;
+.card {
+    background: white;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    flex: 1 1 200px;
+    min-width: 200px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    transition: transform 0.2s;
 }
 
-#chartsContainer {
-  display: flex;
-  justify-content: space-around;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  padding: 20px;
-  gap: 20px;
+.card:hover {
+    transform: translateY(-3px);
 }
 
-.chart-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  padding: 15px;
-  text-align: center;
-  width: 250px;
+.card h2 {
+    margin: 0.25rem 0;
+    font-size: 2rem;
 }
 
-canvas {
-  max-width: 100%;
+.card p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+/* Charts column (compact stacked small charts) */
+.charts-column {
+    width: 95%;
+    max-width: 1200px;
+    margin: 0.25rem auto;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.small-chart {
+    background: white;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.06);
+    text-align: center;
+    width: 260px;
+}
+
+/* Search */
+.search-container {
+    width: 95%;
+    margin: 0.5rem auto;
+    text-align: right;
+}
+
+.search-container input {
+    padding: 0.5rem;
+    width: 250px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    margin-bottom: 0.5rem;
 }
 
 table {
-  width: 90%;
-  margin: 20px auto;
-  border-collapse: collapse;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
+    width: 95%;
+    margin: 1rem auto;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 th, td {
-  border: 1px solid #ddd;
-  padding: 10px;
-  text-align: center;
+    padding: 0.75rem 1rem;
+    text-align: left;
 }
 
 th {
-  background: #3949ab;
-  color: white;
-  cursor: pointer;
+    background: #1976d2;
+    color: white;
+    position: sticky;
+    top: 0;
+    cursor: pointer;
 }
 
 tr:hover {
-  background: #f1f1f1;
+    background: #e3f2fd;
+    cursor: pointer;
+    transition: background 0.2s;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-let packageData = [], classData = [], methodData = [];
-let currentLevel = 'package';
-let currentPackage = '', currentClass = '';
-let charts = {};
-
-async function loadCSV(file) {
-  const res = await fetch(file);
-  const text = await res.text();
-  const rows = text.split('\n').filter(r => r.trim() !== '');
-  const headers = rows[0].split(',');
-  return rows.slice(1).map(row => {
-    const cols = row.split(',');
-    let obj = {};
-    headers.forEach((h, i) => obj[h.trim()] = cols[i]?.trim());
-    return obj;
-  });
+th.sort-asc::after {
+    content: " ▲";
+    font-size: 0.8rem;
 }
 
-function getStats(data) {
-  const totalMissed = data.reduce((sum, d) => sum + parseInt(d['Missed Instructions'] || 0), 0);
-  const totalCovered = data.reduce((sum, d) => sum + parseInt(d['Covered Instructions'] || 0), 0);
-  const totalCoverage = (totalCovered + totalMissed > 0)
-    ? ((totalCovered / (totalCovered + totalMissed)) * 100).toFixed(2)
-    : 0;
-
-  const branchCoverage = (data.reduce((sum, d) => sum + parseFloat(d['Branch Coverage %'] || 0), 0) / data.length).toFixed(2);
-  const avgCoverage = (data.reduce((sum, d) => sum + parseFloat(d['Instruction Coverage %'] || 0), 0) / data.length).toFixed(2);
-
-  return { totalCoverage, branchCoverage, avgCoverage };
+th.sort-desc::after {
+    content: " ▼";
+    font-size: 0.8rem;
 }
 
-function renderSummary(data = packageData, title = 'Project Overview') {
-  const summary = document.getElementById('summary');
-  summary.innerHTML = '';
-
-  const stats = getStats(data);
-  const totalPackages = packageData.length;
-  const totalClasses = classData.length;
-  const criticalPackages = packageData.filter(p => p['Status'].toLowerCase() === 'critical').length;
-
-  const cards = [
-    { title: title, value: '' },
-    { title: 'Total Packages', value: totalPackages },
-    { title: 'Total Classes', value: totalClasses },
-    { title: 'Critical Packages', value: criticalPackages },
-    { title: 'Average Instruction Coverage', value: stats.avgCoverage + '%' },
-    { title: 'Total Project Coverage', value: stats.totalCoverage + '%' }
-  ];
-
-  cards.forEach(c => {
-    const div = document.createElement('div');
-    div.className = 'summary-card';
-    div.innerHTML = `<h3>${c.title}</h3><p>${c.value}</p>`;
-    summary.appendChild(div);
-  });
-
-  renderCharts(data, stats);
+/* --- PROGRESS BAR STYLING --- */
+.progress-container {
+    background: #f0f0f0;
+    border-radius: 12px;
+    height: 16px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-function renderCharts(data, stats) {
-  Object.values(charts).forEach(c => c.destroy && c.destroy());
-
-  const ctx1 = document.getElementById('packageChart').getContext('2d');
-  const ctx2 = document.getElementById('instructionChart').getContext('2d');
-  const ctx3 = document.getElementById('branchChart').getContext('2d');
-  const ctx4 = document.getElementById('averageChart').getContext('2d');
-
-  const pkgStatus = ['Critical', 'Poor', 'Fair', 'Good', 'Excellent'];
-  const pkgCounts = pkgStatus.map(s => data.filter(p => p['Status']?.toLowerCase() === s.toLowerCase()).length);
-
-  charts.package = new Chart(ctx1, {
-    type: 'pie',
-    data: {
-      labels: pkgStatus,
-      datasets: [{
-        data: pkgCounts,
-        backgroundColor: ['#e53935', '#fb8c00', '#fbc02d', '#43a047', '#009688']
-      }]
-    },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
-
-  charts.instruction = new Chart(ctx2, {
-    type: 'doughnut',
-    data: {
-      labels: ['Covered', 'Missed'],
-      datasets: [{
-        data: [stats.totalCoverage, 100 - stats.totalCoverage],
-        backgroundColor: ['#43a047', '#e53935']
-      }]
-    },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
-
-  charts.branch = new Chart(ctx3, {
-    type: 'doughnut',
-    data: {
-      labels: ['Covered', 'Missed'],
-      datasets: [{
-        data: [stats.branchCoverage, 100 - stats.branchCoverage],
-        backgroundColor: ['#009688', '#ef5350']
-      }]
-    },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
-
-  charts.average = new Chart(ctx4, {
-    type: 'doughnut',
-    data: {
-      labels: ['Average Coverage', 'Remaining'],
-      datasets: [{
-        data: [stats.avgCoverage, 100 - stats.avgCoverage],
-        backgroundColor: ['#5c6bc0', '#c5cae9']
-      }]
-    },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
+.progress-bar {
+    height: 100%;
+    border-radius: 12px;
+    transition: width 0.6s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    padding-left: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-function renderTable(data, level) {
-  const tableContainer = document.getElementById('tableContainer');
-  currentLevel = level;
-  tableContainer.innerHTML = '';
+/* --- PROGRESS LEVEL COLORS --- */
+.critical {
+    background: linear-gradient(90deg, #e53935, #b71c1c);
+}
 
-  const table = document.createElement('table');
-  const headers = Object.keys(data[0] || {});
-  const thead = document.createElement('thead');
-  const tr = document.createElement('tr');
+.poor {
+    background: linear-gradient(90deg, #fb8c00, #ef6c00);
+}
 
-  headers.forEach(h => {
-    const th = document.createElement('th');
-    th.textContent = h;
-    th.addEventListener('click', () => {
-      data.sort((a, b) => (a[h] > b[h] ? 1 : -1));
-      renderTable(data, level);
-    });
-    tr.appendChild(th);
-  });
+.fair {
+    background: linear-gradient(90deg, #fbc02d, #f9a825);
+    color: #333;
+    text-shadow: none;
+}
 
-  thead.appendChild(tr);
-  table.appendChild(thead);
+.good {
+    background: linear-gradient(90deg, #43a047, #2e7d32);
+}
 
-  const tbody = document.createElement('tbody');
-  data.forEach(row => {
-    const tr = document.createElement('tr');
-    headers.forEach(h => {
-      const td = document.createElement('td');
-      td.textContent = row[h];
-      tr.appendChild(td);
-    });
+.excellent {
+    background: linear-gradient(90deg, #009688, #00695c);
+}
 
-    if (level === 'package') {
-      tr.addEventListener('click', () => {
-        currentPackage = row['Package'];
-        const filtered = classData.filter(c => c['Package'] === currentPackage);
-        renderSummary(filtered, `Package: ${currentPackage}`);
-        renderTable(filtered, 'class');
-      });
-    } else if (level === 'class') {
-      tr.addEventListener('click', () => {
-        currentClass = row['Class (with extension)'];
-        const filtered = methodData.filter(m => m['Package'] === currentPackage && m['Class (with extension)'] === currentClass);
-        renderSummary(filtered, `Class: ${currentClass}`);
-        renderTable(filtered, 'method');
-      });
+#loader {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(255,255,255,0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+  color: #1976d2;
+  z-index: 9999;
+}
+
+.spinner {
+  border: 4px solid #e0e0e0;
+  border-top: 4px solid #1976d2;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.alert {
+    width: 95%;
+    margin: 1rem auto;
+    padding: 1rem;
+    border-radius: 10px;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.alert-critical {
+    background: #d32f2f;
+}
+
+.alert-poor {
+    background: #f57c00;
+}
+
+@media(max-width: 768px) {
+    th, td {
+        padding: 0.5rem;
+        font-size: 0.85rem;
     }
 
-    tbody.appendChild(tr);
-  });
+    .search-container input {
+        width: 100%;
+    }
 
-  table.appendChild(tbody);
-  tableContainer.appendChild(table);
+    .charts-column {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .small-chart { width: 95%; }
 }
 
-async function init() {
-  packageData = await loadCSV('package_report.csv');
-  classData = await loadCSV('class_report.csv');
-  methodData = await loadCSV('method_report.csv');
 
-  renderSummary(packageData);
-  renderTable(packageData, 'package');
 
-  document.getElementById('searchBox').addEventListener('input', e => {
-    const query = e.target.value.toLowerCase();
-    let filtered;
-    if (currentLevel === 'package') filtered = packageData.filter(p => p['Package'].toLowerCase().includes(query));
-    else if (currentLevel === 'class') filtered = classData.filter(c => c['Package'] === currentPackage && c['Class (with extension)'].toLowerCase().includes(query));
-    else filtered = methodData.filter(m => m['Package'] === currentPackage && m['Class (with extension)'] === currentClass && m['Method'].toLowerCase().includes(query));
-    renderTable(filtered, currentLevel);
-  });
 
-  document.getElementById('homeTitle').addEventListener('click', () => {
-    renderSummary(packageData);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+let packageData = [], classData = [], methodData = [], summaryData = [];
+let currentPackage = null, currentClass = null;
+let currentTab = 'all';
+let currentSort = { key: null, order: 'asc' };
+let currentLevel = 'package';      // 'package' | 'class' | 'method'
+let currentViewData = [];          // currently displayed table base data
+let charts = {};                   // Chart.js instances
+
+// ================= CSV Loader =================
+async function loadCSV(file) {
+    const res = await fetch(file);
+    const text = await res.text();
+    const rows = text.split('\n').filter(r => r.trim() !== '');
+    if (rows.length === 0) return [];
+    const headers = rows[0].split(',').map(h => h.trim());
+    return rows.slice(1).map(row => {
+        const cols = row.split(',');
+        let obj = {};
+        headers.forEach((h, i) => obj[h] = (cols[i] ?? '').trim());
+        return obj;
+    });
+}
+
+// ================= Helper Functions =================
+function getCoverageClass(status = '') {
+    switch (status.toLowerCase()) {
+        case 'critical': return 'critical';
+        case 'poor': return 'poor';
+        case 'fair': return 'fair';
+        case 'good': return 'good';
+        case 'excellent': return 'excellent';
+        default: return '';
+    }
+}
+
+function showAlert(status = '') {
+    const alertDiv = document.getElementById('alert');
+    if (!status) { alertDiv.innerHTML = ''; return; }
+    if (status.toLowerCase() === 'critical') {
+        alertDiv.innerHTML = `<div class="alert alert-critical">⚠ Critical coverage! Add unit tests immediately.</div>`;
+    } else if (status.toLowerCase() === 'poor') {
+        alertDiv.innerHTML = `<div class="alert alert-poor">⚠ Poor coverage! Consider adding more tests.</div>`;
+    } else {
+        alertDiv.innerHTML = '';
+    }
+}
+
+function updateBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    let html = `<span onclick="goHome()">Home</span>`;
+    if (currentPackage) html += ` &gt; <span onclick="showPackage()">${currentPackage}</span>`;
+    if (currentClass) html += ` &gt; <span onclick="showClass()">${currentClass}</span>`;
+    bc.innerHTML = html;
+}
+
+function filterTab(tab, evt) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    if (evt && evt.target) evt.target.classList.add('active');
+    currentTab = tab;
+    // on tab change go to home at package view
+    goHome();
+}
+
+// robust field lookup helper (case-insensitive / fuzzy)
+function findFieldKey(obj, regex) {
+    if (!obj) return null;
+    const keys = Object.keys(obj);
+    for (let k of keys) {
+        if (regex.test(k)) return k;
+    }
+    return null;
+}
+
+function parseNumberSafe(val) {
+    if (val == null || val === '') return 0;
+    const n = Number(String(val).replace(/[^0-9.-]+/g, ''));
+    return isNaN(n) ? 0 : n;
+}
+
+// ================= Search & Sorting =================
+function applySearchFilter(data) {
+    const query = document.getElementById('searchBox').value.toLowerCase().trim();
+    if (!query) return data;
+    return data.filter(row => Object.values(row).some(val => String(val || '').toLowerCase().includes(query)));
+}
+
+function sortData(data, key) {
+    if (!key) return data;
+    if (currentSort.key === key) {
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.key = key;
+        currentSort.order = 'asc';
+    }
+    const ord = currentSort.order === 'asc' ? 1 : -1;
+    return data.sort((a, b) => {
+        const x = a[key] ?? '';
+        const y = b[key] ?? '';
+        const xn = parseNumberSafe(x);
+        const yn = parseNumberSafe(y);
+        if (xn !== 0 || yn !== 0) {
+            return (xn - yn) * ord;
+        }
+        return String(x).localeCompare(String(y)) * ord;
+    });
+}
+
+// ================= Summary & Charts =================
+function computeStats(data) {
+    // find appropriate field names (case-variants)
+    const coveredKey = findFieldKey(data[0] || {}, /covered\s*instructions?/i) || findFieldKey(data[0] || {}, /covered/i);
+    const missedKey = findFieldKey(data[0] || {}, /missed\s*instructions?/i) || findFieldKey(data[0] || {}, /missed/i);
+    const instructionKey = findFieldKey(data[0] || {}, /instruction\s*coverage/i) || findFieldKey(data[0] || {}, /instruction/i);
+    const branchKey = findFieldKey(data[0] || {}, /branch\s*coverage/i) || findFieldKey(data[0] || {}, /branch/i);
+
+    let totalCovered = 0, totalMissed = 0;
+    let instrSum = 0, branchSum = 0, count = data.length || 0;
+
+    data.forEach(d => {
+        totalCovered += parseNumberSafe(d[coveredKey]);
+        totalMissed += parseNumberSafe(d[missedKey]);
+        instrSum += parseNumberSafe(d[instructionKey]);
+        branchSum += parseNumberSafe(d[branchKey]);
+    });
+
+    const totalCoverage = (totalCovered + totalMissed) > 0 ? ((totalCovered / (totalCovered + totalMissed)) * 100) : 0;
+    const avgInstruction = count > 0 ? (instrSum / count) : 0;
+    const avgBranch = count > 0 ? (branchSum / count) : 0;
+
+    return {
+        totalCovered, totalMissed,
+        totalCoverage: Number(totalCoverage.toFixed(2)),
+        avgInstruction: Number(avgInstruction.toFixed(2)),
+        avgBranch: Number(avgBranch.toFixed(2))
+    };
+}
+
+function renderSummary() {
+    const summary = document.getElementById('summary');
+    summary.innerHTML = '';
+
+    const totalPackages = packageData.length;
+    const totalClasses = classData.length;
+    const criticalPackages = packageData.filter(p => String(p['Status'] || '').toLowerCase() === 'critical').length;
+
+    // For project total coverage use packageData totals (preferred) — fallback to summary.csv if available
+    const overallStats = packageData.length ? computeStats(packageData) : (summaryData[0] ? {
+        totalCovered: parseNumberSafe(summaryData[0]['Covered Instructions']),
+        totalMissed: parseNumberSafe(summaryData[0]['Missed Instructions']),
+        totalCoverage: parseNumberSafe(summaryData[0]['Total Coverage (%)']) || 0,
+        avgInstruction: parseNumberSafe(summaryData[0]['Instruction Coverage (%)']) || 0,
+        avgBranch: parseNumberSafe(summaryData[0]['Branch Coverage (%)']) || 0
+    } : { totalCoverage: 0, avgInstruction: 0, avgBranch: 0 });
+
+    const cards = [
+        { title: 'Total Packages', value: totalPackages },
+        { title: 'Total Classes', value: totalClasses },
+        { title: 'Critical Packages', value: criticalPackages },
+        { title: 'Total Project Coverage', value: overallStats.totalCoverage.toFixed(2) + '%' }
+    ];
+
+    cards.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `<p>${c.title}</p><h2>${c.value}</h2>`;
+        summary.appendChild(div);
+    });
+
+    // render four small charts using packageData by default or currentViewData if set
+    const chartBase = currentLevel === 'package' && currentPackage ? classData.filter(c => c['Package'] === currentPackage) :
+                      currentLevel === 'class' && currentClass ? methodData.filter(m => m['Package'] === currentPackage && m['Class (with extension)'] === currentClass) :
+                      packageData;
+
+    renderSmallCharts(chartBase);
+}
+
+// small charts: package status distribution, instruction, branch, average
+function renderSmallCharts(baseData) {
+    // ensure baseData is an array
+    baseData = Array.isArray(baseData) ? baseData : (packageData || []);
+
+    // compute stats for baseData
+    const stats = computeStats(baseData);
+
+    // Package Status distribution (use original packageData when project-level)
+    const pkgData = (currentLevel === 'package' && currentPackage) ? classData.filter(c => c['Package'] === currentPackage) : packageData;
+    const statuses = ['Critical', 'Poor', 'Fair', 'Good', 'Excellent'];
+    const counts = statuses.map(s => pkgData.filter(p => String(p['Status'] || '').toLowerCase() === s.toLowerCase()).length);
+
+    // destroy previous charts safely
+    Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) { } });
+    charts = {};
+
+    // package chart (pie)
+    const pkgCtx = document.getElementById('packageChart').getContext('2d');
+    charts.package = new Chart(pkgCtx, {
+        type: 'pie',
+        data: {
+            labels: statuses,
+            datasets: [{ data: counts, backgroundColor: ['#e53935', '#fb8c00', '#fbc02d', '#43a047', '#009688'] }]
+        },
+        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
+    });
+
+    // instruction chart (doughnut) -> covered vs missed using baseData totals
+    const instrCtx = document.getElementById('instructionChart').getContext('2d');
+    charts.instruction = new Chart(instrCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Covered', 'Missed'],
+            datasets: [{ data: [stats.totalCoverage, Math.max(0, 100 - stats.totalCoverage)], backgroundColor: ['#43a047', '#e53935'] }]
+        },
+        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
+    });
+
+    // branch chart (doughnut) -> avg branch coverage vs remaining
+    const branchCtx = document.getElementById('branchChart').getContext('2d');
+    charts.branch = new Chart(branchCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Covered', 'Remaining'],
+            datasets: [{ data: [stats.avgBranch, Math.max(0, 100 - stats.avgBranch)], backgroundColor: ['#009688', '#ef5350'] }]
+        },
+        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
+    });
+
+    // average chart (doughnut)
+    const avgCtx = document.getElementById('averageChart').getContext('2d');
+    charts.average = new Chart(avgCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Average', 'Remaining'],
+            datasets: [{ data: [stats.avgInstruction, Math.max(0, 100 - stats.avgInstruction)], backgroundColor: ['#5c6bc0', '#c5cae9'] }]
+        },
+        options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
+    });
+}
+
+// ================= Render Table =================
+function renderTable(data, level) {
+    currentLevel = level;
+    currentViewData = data;
+    const container = document.getElementById('table-container');
+    container.innerHTML = '';
+
+    // Apply Tab Filter at package level
+    if (level === 'package') {
+        if (currentTab === 'top') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)'] || p['Instruction Coverage %'] || p['Instruction Coverage'] || p['Instruction Coverage (%)']) >= 80);
+        else if (currentTab === 'attention') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)'] || p['Instruction Coverage %'] || p['Instruction Coverage'] || p['Instruction Coverage (%)']) < 40);
+    }
+
+    // Apply Search Filter (search should apply to currently shown dataset)
+    data = applySearchFilter(data);
+
+    if (data.length === 0) {
+        container.innerHTML = '<p style="text-align:center;">No data to display</p>';
+        return;
+    }
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const keys = Object.keys(data[0]);
+
+    keys.forEach(h => {
+        const th = document.createElement('th');
+        th.innerText = h;
+        th.addEventListener('click', () => {
+            // sort current displayed data
+            data = sortData(data, h);
+            renderTable(data, level);
+
+            // visual sort markers
+            document.querySelectorAll('th').forEach(header => header.classList.remove('sort-asc', 'sort-desc'));
+            if (currentSort.order === 'asc') th.classList.add('sort-asc'); else th.classList.add('sort-desc');
+        });
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+
+        keys.forEach(key => {
+            const td = document.createElement('td');
+            const val = row[key] ?? '';
+            if (key.toLowerCase().includes('coverage')) {
+                // numeric coverage cell
+                const numeric = parseNumberSafe(val);
+                td.innerHTML = `<div class="progress-container">
+                    <div class="progress-bar ${getCoverageClass(row['Status'] || '')}" style="width:${numeric}%">${numeric}%</div>
+                </div>`;
+            } else td.innerText = val;
+            tr.appendChild(td);
+        });
+
+        // row click drill-down
+        if (level === 'package') {
+            tr.addEventListener('click', () => {
+                currentPackage = row['Package'];
+                currentClass = null;
+                const filtered = classData.filter(c => c['Package'] === currentPackage);
+                updateBreadcrumb();
+                renderSummary();              // update cards + charts for this package (class-level base)
+                renderTable(filtered, 'class');
+            });
+        } else if (level === 'class') {
+            tr.addEventListener('click', () => {
+                currentClass = row['Class (with extension)'] || row['Class'] || row['ClassName'];
+                const filtered = methodData.filter(m => m['Package'] === currentPackage && (m['Class (with extension)'] === currentClass || m['Class'] === currentClass));
+                updateBreadcrumb();
+                renderSummary();              // update cards + charts for this class (method-level base)
+                renderTable(filtered, 'method');
+            });
+        }
+
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
+
+// ================= Navigation =================
+function goHome() {
+    currentPackage = null;
+    currentClass = null;
+    updateBreadcrumb();
+    renderSummary();
     renderTable(packageData, 'package');
-  });
 }
 
-window.onload = init;
+function showPackage() {
+    if (!currentPackage) return;
+    const filtered = classData.filter(c => c['Package'] === currentPackage);
+    renderSummary();
+    renderTable(filtered, 'class');
+}
+
+function showClass() {
+    if (!currentPackage || !currentClass) return;
+    const filtered = methodData.filter(m => m['Package'] === currentPackage && (m['Class (with extension)'] === currentClass || m['Class'] === currentClass));
+    renderSummary();
+    renderTable(filtered, 'method');
+}
+
+// ================= Init =================
+async function init() {
+    const loader = document.getElementById('loader');
+    if (loader) loader.style.display = 'flex';
+
+    try {
+        packageData = await loadCSV('package_report.csv');
+        classData = await loadCSV('class_report.csv');
+        methodData = await loadCSV('method_report.csv');
+        summaryData = await loadCSV('summary.csv');
+
+        // initial render
+        renderSummary();
+        renderTable(packageData, 'package');
+
+        // search input handler - context aware
+        document.getElementById('searchBox').addEventListener('input', () => {
+            const q = document.getElementById('searchBox').value.toLowerCase().trim();
+            let filtered = [];
+            if (currentLevel === 'package') {
+                filtered = packageData.filter(p => Object.values(p).some(v => String(v || '').toLowerCase().includes(q)));
+                renderTable(filtered, 'package');
+            } else if (currentLevel === 'class') {
+                filtered = classData.filter(c => c['Package'] === currentPackage && Object.values(c).some(v => String(v || '').toLowerCase().includes(q)));
+                renderTable(filtered, 'class');
+            } else if (currentLevel === 'method') {
+                filtered = methodData.filter(m => m['Package'] === currentPackage && (m['Class (with extension)'] === currentClass || m['Class'] === currentClass) && Object.values(m).some(v => String(v || '').toLowerCase().includes(q)));
+                renderTable(filtered, 'method');
+            }
+        });
+    } catch (error) {
+        console.error("Error loading CSVs:", error);
+        document.getElementById('table-container').innerHTML = '<p style="text-align:center;color:red;">Error loading data.</p>';
+    } finally {
+        if (loader) loader.style.display = 'none';
+    }
+}
+
+init();
