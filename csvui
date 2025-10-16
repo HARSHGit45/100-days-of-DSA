@@ -1,3 +1,69 @@
+
+function renderSmallCharts(data) {
+    const chartsDiv = document.getElementById('charts');
+    chartsDiv.innerHTML = ''; // clear old charts
+
+    // Compute from current data
+    const pkgCoverage = data.map(d => parseNumberSafe(d['Instruction Coverage (%)'] || d['Coverage (%)'])).filter(n => !isNaN(n));
+    const avgCoverage = pkgCoverage.length ? (pkgCoverage.reduce((a, b) => a + b, 0) / pkgCoverage.length) : 0;
+
+    // ✅ Get Total Coverage directly from summary.csv (no recalculation)
+    const totalCoverage = summaryData[0] ? parseNumberSafe(summaryData[0]['Total Coverage (%)']) : 0;
+
+    // ✅ Only two charts now
+    const chartItems = [
+        { id: 'pkgCov', label: 'Package Coverage', value: avgCoverage },
+        { id: 'totalCov', label: 'Total Coverage', value: totalCoverage }
+    ];
+
+    chartItems.forEach(ch => {
+        const div = document.createElement('div');
+        div.className = 'chart-item';
+        div.innerHTML = `
+            <h4>${ch.label}</h4>
+            <canvas id="${ch.id}" width="160" height="160"></canvas>
+            <p>${ch.value.toFixed(2)}%</p>
+        `;
+        chartsDiv.appendChild(div);
+
+        const ctx = document.getElementById(ch.id);
+        if (!ctx) return;
+        if (chartRefs[ch.id]) chartRefs[ch.id].destroy();
+
+        chartRefs[ch.id] = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Covered', 'Missed'],
+                datasets: [{
+                    data: [ch.value, 100 - ch.value],
+                    backgroundColor: ['#4CAF50', '#E0E0E0'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                cutout: '70%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true }
+                }
+            }
+        });
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 
