@@ -1,40 +1,150 @@
+package com.imobile3.pos.data.module.batch.report
 
-function renderSmallCharts(data) {
-    const chartsDiv = document.getElementById('charts');
-    chartsDiv.innerHTML = ''; // clear old charts
+import com.imobile3.pos.app.AppLocaleHelper
+import com.imobile3.pos.library.domainobjects.*
+import com.imobile3.pos.library.webservices.enums.PaymentType
+import com.imobile3.pos.library.webservices.enums.TransferType
+import com.imobile3.pos.library.webservices.transferobjects.BatchDepositDto
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.Assertions.*
+import org.mockito.Mockito
+import java.math.BigDecimal
 
-    // Compute from current data
-    const pkgCoverage = data.map(d => parseNumberSafe(d['Instruction Coverage (%)'] || d['Coverage (%)'])).filter(n => !isNaN(n));
-    const avgCoverage = pkgCoverage.length ? (pkgCoverage.reduce((a, b) => a + b, 0) / pkgCoverage.length) : 0;
+class BatchSummaryReportHelperTest {
 
-    // ✅ Get Total Coverage directly from summary.csv (no recalculation)
-    const totalCoverage = summaryData[0] ? parseNumberSafe(summaryData[0]['Total Coverage (%)']) : 0;
+    private lateinit var batchReport: BatchReport
+    private lateinit var detailedReport: BatchReportDetailed
+    private lateinit var batchTransfers: MutableList<TxDbBatchTransfer>
 
-    // ✅ Only two charts now
-    const chartItems = [
-        { id: 'pkgCov', label: 'Package Coverage', value: avgCoverage },
-        { id: 'totalCov', label: 'Total Coverage', value: totalCoverage }
-    ];
+    @BeforeEach
+    fun setup() {
+        // Mock locale helper
+        val currencyManager = Mockito.mock(AppLocaleHelper.CurrencyManager::class.java)
+        Mockito.`when`(currencyManager.formatForDisplay(Mockito.anyBoolean(), Mockito.any()))
+            .thenAnswer { "$${it.arguments[1]}" }
+        val appLocaleHelper = Mockito.mock(AppLocaleHelper::class.java)
+        Mockito.`when`(appLocaleHelper.getCurrencyManager()).thenReturn(currencyManager)
+        AppLocaleHelper.setInstanceForTesting(appLocaleHelper)
 
-    chartItems.forEach(ch => {
-        const div = document.createElement('div');
-        div.className = 'chart-item';
-        div.innerHTML = `
-            <h4>${ch.label}</h4>
-            <canvas id="${ch.id}" width="160" height="160"></canvas>
-            <p>${ch.value.toFixed(2)}%</p>
-        `;
-        chartsDiv.appendChild(div);
+        // Setup deposits
+        val depositCash = BatchDepositDto().apply {
+            paymentType = PaymentType.Cash
+            amountReceived = BigDecimal("100.00")
+            depositAmount = BigDecimal("90.00")
+            totalAmount = BigDecimal("95.00")
+            overShortAmount = BigDecimal("5.00")
+            orderAmount = BigDecimal("80.00")
+            tipAmount = BigDecimal("10.00")
+        }
 
-        const ctx = document.getElementById(ch.id);
-        if (!ctx) return;
-        if (chartRefs[ch.id]) chartRefs[ch.id].destroy();
+        val depositCard = BatchDepositDto().apply {
+            paymentType = PaymentType.CreditCard
+            amountReceived = BigDecimal("200.00")
+            depositAmount = BigDecimal("200.00")
+            totalAmount = BigDecimal("200.00")
+            overShortAmount = BigDecimal.ZERO
+        }
 
-        chartRefs[ch.id] = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Covered', 'Missed'],
-                datasets: [{
+        batchReport = BatchReport().apply {
+            deposits = listOf(depositCash, depositCard)
+        }
+
+        // Setup detailed report
+        detailedReport = BatchReportDetailed().apply {
+            tenderDetails = listOf(
+                BatchReportTender().apply {
+                    id = BatchSummaryReportHelper.CASH_TENDER_ID
+                    quantity = 2
+                },
+                BatchReportTender().apply {
+                    id = BatchSummaryReportHelper.VISA_TENDER_ID
+                    quantity = 3
+                }
+            )
+        }
+
+        // Setup transfers
+        batchTransfers = mutableListOf(
+            TxDbBatchTransfer().apply {
+                amount = BigDecimal("50.00")
+                transferTypeId = TransferType.CashIn
+            },
+            TxDbBatchTransfer().apply {
+                amount = BigDecimal("10.00")
+                transferTypeId = TransferType.SafeDrop
+            },
+            TxDbBatchTransfer().apply {
+                amount = BigDecimal("5.00")
+                transferTypeId = TransferType.CashOut
+            }
+        )
+    }
+
+    @Test
+    fun `test getTenderNameList returns tender names`() {
+        val names = BatchSummaryReportHelper.getTenderNameList(batchReport)
+        assertEquals(listOf("Cash", "CreditCard"), names)
+    }
+
+    @Test
+    fun `test getTendersCountList returns proper quantities`() {
+        val counts = BatchSummaryReportHelper.getTendersCountList(batchReport, detailedReport)
+        assertEquals(listOf("2", "3"), counts)
+    }
+
+    @Test
+    fun `test getDepositTotalList returns formatted values`() {
+        val deposits = BatchSummaryReportHelper.getDepositTotalList(batchReport)
+        assertTrue(deposits.all { it.startsWith("$") })
+    }
+
+    @Test
+    fun `test getTotalsList sums correctly`() {
+        val totals = BatchSummaryReportHelper.getTotalsList(batchReport, batchTransfers)
+        assertEquals(BigDecimal("300.00"), totals[BatchSummaryReportHelper.PAYMENTS_GRAND_TOTAL_INDEX])
+        assertEquals(BigDecimal("290.00"), totals[BatchSummaryReportHelper.DEPOSIT_GRAND_TOTAL_INDEX])
+        assertTrue(totals[BatchSummaryReportHelper.REGISTER_GRAND_TOTAL_INDEX] > BigDecimal("295.00"))
+    }
+
+    @Test
+    fun `test getBatchTransfersList calculates expected cash`() {
+        val result = BatchSummaryReportHelper.getBatchTransfersList(batchReport, batchTransfers, BigDecimal("10.00"))
+        val expectedCash = result[BatchSummaryReportHelper.EXPECTED_CASH_INDEX]
+        assertTrue(expectedCash > BigDecimal.ZERO)
+    }
+
+    @Test
+    fun `test getPaymentsTotal sums tender counts`() {
+        val total = BatchSummaryReportHelper.getPaymentsTotal(detailedReport, batchReport)
+        assertEquals("5", total)
+    }
+
+    @Test
+    fun `test getCashTransferTotal ignores SafeDrop`() {
+        val total = BatchSummaryReportHelper.getCashTransferTotal(batchTransfers)
+        assertEquals(BigDecimal("55.00"), total)
+    }
+
+    @Test
+    fun `test handles null deposits gracefully`() {
+        val emptyReport = BatchReport().apply { deposits = null }
+        val totals = BatchSummaryReportHelper.getTotalsList(emptyReport, batchTransfers)
+        assertNotNull(totals)
+    }
+
+    @Test
+    fun `test getTendersCountList handles null tender details`() {
+        val badReportDetailed = BatchReportDetailed().apply { tenderDetails = null }
+        val result = BatchSummaryReportHelper.getTendersCountList(batchReport, badReportDetailed)
+        assertTrue(result.isNotEmpty())
+    }
+
+    @Test
+    fun `test formatForDisplay delegates to currency manager`() {
+        val result = BatchSummaryReportHelper.formatForDisplay(BigDecimal("123.45"))
+        assertEquals("\$123.45", result)
+    }
+}                datasets: [{
                     data: [ch.value, 100 - ch.value],
                     backgroundColor: ['#4CAF50', '#E0E0E0'],
                     borderWidth: 1
