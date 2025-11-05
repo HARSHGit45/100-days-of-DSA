@@ -1,40 +1,156 @@
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
+package com.imobile3.pos.data.module.batch.report
 
-import java.io.File;
-import java.io.IOException;
-import java.time.LocalDate;
-import java.util.*;
+import com.imobile3.pos.app.AppLocaleHelper
+import com.imobile3.pos.library.domainobjects.BatchReportDetailed
+import com.imobile3.pos.library.utils.CurrencyManager
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.math.BigDecimal
+import java.math.RoundingMode
+import kotlin.test.assertEquals
 
-public class DummyOrderDataGenerator {
+class BatchReportsHelperTest {
 
-    // Random generators
-    private static final Random random = new Random();
-    private static final String[] firstNames = {"Kamala", "John", "Peter", "Mary", "Bruce", "Tony", "Natasha", "Steve", "Wanda", "Clint"};
-    private static final String[] lastNames = {"Khan", "Doe", "Parker", "Jane", "Wayne", "Stark", "Romanoff", "Rogers", "Maximoff", "Barton"};
-    private static final String[] staffMembers = {"Sean Cassidy", "Jane Smith", "Logan Howlett", "Scott Summers", "Jean Grey"};
-    private static final String[] services = {"Women's Haircut", "Men's Haircut", "Beard Trim", "Hair Wash", "Hair Coloring", "Facial", "Massage"};
-    private static final int[] prices = {20, 30, 40, 50, 60, 70, 80};
+    private lateinit var mockCurrencyManager: CurrencyManager
 
-    public static void main(String[] args) throws IOException {
-        Map<String, Object> jsonData = new HashMap<>();
-        List<Map<String, Object>> datesList = new ArrayList<>();
+    @BeforeEach
+    fun setup() {
+        // Mock static AppLocaleHelper.getCurrencyManager()
+        mockkStatic(AppLocaleHelper::class)
+        mockCurrencyManager = mockk(relaxed = true)
 
-        // Generate 5 dates (last 5 days from today)
-        for (int d = 0; d < 5; d++) {
-            LocalDate date = LocalDate.now().minusDays(d);
-            Map<String, Object> dateEntry = new HashMap<>();
-            dateEntry.put("date", date.toString());
+        every { AppLocaleHelper.getCurrencyManager() } returns mockCurrencyManager
 
-            List<Map<String, Object>> orders = new ArrayList<>();
-            int numOrders = random.nextInt(20) + 1; // up to 20 orders
+        every { mockCurrencyManager.maxCalculationPrecision } returns 4
+        every { mockCurrencyManager.roundingStyle } returns RoundingMode.HALF_UP
+    }
 
-            for (int i = 0; i < numOrders; i++) {
-                Map<String, Object> order = new HashMap<>();
-                order.put("orderTitle", "Order " + (i + 1));
+    @AfterEach
+    fun teardown() {
+        unmockkAll()
+    }
 
-                // Random time slots
-                int startHour = 8 + random.nextInt(10); // between 8 AM - 6 PM
+    // ---------------------------
+    // calculateTotalPercentageSales
+    // ---------------------------
+
+    @Test
+    fun `calculateTotalPercentageSales when grandTotal is null returns 0 percent`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = null
+            tipTotal = BigDecimal("10.00")
+        }
+
+        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+
+        assertEquals("0%", result)
+    }
+
+    @Test
+    fun `calculateTotalPercentageSales when grandTotal is zero returns 0 percent`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = BigDecimal.ZERO
+            tipTotal = BigDecimal("5.00")
+        }
+
+        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+
+        assertEquals("0%", result)
+    }
+
+    @Test
+    fun `calculateTotalPercentageSales when tipTotal is null returns 0 percent`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = BigDecimal("100.00")
+            tipTotal = null
+        }
+
+        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+
+        assertEquals("0%", result)
+    }
+
+    @Test
+    fun `calculateTotalPercentageSales with valid totals returns correct percentage`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = BigDecimal("100.00")
+            tipTotal = BigDecimal("10.00")
+        }
+
+        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+
+        assertEquals("10%", result)
+    }
+
+    @Test
+    fun `calculateTotalPercentageSales with tip greater than sales returns over 100 percent`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = BigDecimal("100.00")
+            tipTotal = BigDecimal("150.00")
+        }
+
+        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+
+        assertEquals("150%", result)
+    }
+
+    // ---------------------------
+    // calculateTotalSales
+    // ---------------------------
+
+    @Test
+    fun `calculateTotalSales when grandTotal is null returns 0`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = null
+        }
+
+        val result = BatchReportsHelper.calculateTotalSales(report)
+
+        assertEquals("0", result)
+    }
+
+    @Test
+    fun `calculateTotalSales with non-zero grandTotal formats correctly`() {
+        val report = BatchReportDetailed().apply {
+            grandTotal = BigDecimal("100.50")
+        }
+
+        val result = BatchReportsHelper.calculateTotalSales(report)
+
+        assertEquals("100.50", result)
+    }
+
+    // ---------------------------
+    // calculateNonCashTips
+    // ---------------------------
+
+    @Test
+    fun `calculateNonCashTips when tipTotal is null returns 0`() {
+        val report = BatchReportDetailed().apply {
+            tipTotal = null
+        }
+
+        val result = BatchReportsHelper.calculateNonCashTips(report)
+
+        assertEquals("0", result)
+    }
+
+    @Test
+    fun `calculateNonCashTips with non-zero tipTotal formats correctly`() {
+        val report = BatchReportDetailed().apply {
+            tipTotal = BigDecimal("12.34")
+        }
+
+        val result = BatchReportsHelper.calculateNonCashTips(report)
+
+        assertEquals("12.34", result)
+    }
+}                int startHour = 8 + random.nextInt(10); // between 8 AM - 6 PM
                 int duration = 30 + random.nextInt(60); // 30-90 mins
                 int endHour = Math.min(startHour + 1, 20);
 
