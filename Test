@@ -1,207 +1,493 @@
-package com.imobile3.pos.data.module.batch.report
+<!DOCTYPE html>
+<html lang="en">
 
-import com.imobile3.pos.app.AppLocaleHelper
-import com.imobile3.pos.library.domainobjects.BatchReportDetailed
-import com.imobile3.pos.library.utils.CurrencyManager
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkAll
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import java.math.BigDecimal
-import java.math.RoundingMode
-import kotlin.test.assertEquals
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PosAndroid Dashboard</title>
+    <link href="style.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
 
-class BatchReportsHelperTest {
+<body>
 
-    private lateinit var mockCurrencyManager: CurrencyManager
+    <header>
+        <h1>PosAndroid JaCoCo Coverage Dashboard</h1>
+    </header>
 
-    @BeforeEach
-    fun setup() {
-        // Mock static AppLocaleHelper.getCurrencyManager()
-        mockkStatic(AppLocaleHelper::class)
-        mockCurrencyManager = mockk(relaxed = true)
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Please wait, loading data...</p>
+    </div>
 
-        every { AppLocaleHelper.getCurrencyManager() } returns mockCurrencyManager
+    <div class="breadcrumb" id="breadcrumb">Home</div>
 
-        every { mockCurrencyManager.maxCalculationPrecision } returns 4
-        every { mockCurrencyManager.roundingStyle } returns RoundingMode.HALF_UP
+    <div class="tabs">
+        <div class="tab active" onclick="filterTab('all', event)">All Packages</div>
+        <div class="tab" onclick="filterTab('top', event)">Top Performers</div>
+        <div class="tab" onclick="filterTab('attention', event)">Needs Attention</div>
+    </div>
+
+    <div id="alert"></div>
+
+    <div class="top-section">
+        <div id="summary"></div>
+
+        <div class="charts-row">
+            <div class="small-chart">
+                <canvas id="packageChart"></canvas>
+                <p>Package Status</p>
+            </div>
+            <div class="small-chart">
+                <canvas id="averageChart"></canvas>
+                <p>Average Coverage</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="searchBox" placeholder="Search..." />
+    </div>
+
+    <div id="table-container"></div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
+
+
+
+
+let packageData = [], classData = [], methodData = [], summaryData = [];
+let currentPackage = null, currentClass = null;
+let currentTab = 'all';
+let currentSort = { key: null, order: 'asc' };
+let currentLevel = 'package';    
+let charts = {};
+
+// ================= CSV Loader =================
+async function loadCSV(file) {
+    const res = await fetch(file);
+    const text = await res.text();
+    const rows = text.split('\n').filter(r => r.trim() !== '');
+    if (rows.length === 0) return [];
+    const headers = rows[0].split(',').map(h => h.trim());
+    return rows.slice(1).map(row => {
+        const cols = row.split(',');
+        let obj = {};
+        headers.forEach((h, i) => obj[h] = (cols[i] ?? '').trim());
+        return obj;
+    });
+}
+
+// ================= Helper Functions =================
+function getCoverageClass(status = '') {
+    switch (status.toLowerCase()) {
+        case 'critical': return 'critical';
+        case 'poor': return 'poor';
+        case 'fair': return 'fair';
+        case 'good': return 'good';
+        case 'excellent': return 'excellent';
+        default: return '';
     }
+}
 
-    @AfterEach
-    fun teardown() {
-        unmockkAll()
+function showAlert(status = '') {
+    const alertDiv = document.getElementById('alert');
+    if (!status) { alertDiv.innerHTML = ''; return; }
+    if (status.toLowerCase() === 'critical') {
+        alertDiv.innerHTML = `<div class="alert alert-critical">⚠ Critical coverage! Add unit tests immediately.</div>`;
+    } else if (status.toLowerCase() === 'poor') {
+        alertDiv.innerHTML = `<div class="alert alert-poor">⚠ Poor coverage! Consider adding more tests.</div>`;
+    } else {
+        alertDiv.innerHTML = '';
     }
+}
 
-    // ---------------------------
-    // calculateTotalPercentageSales
-    // ---------------------------
+function updateBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    let html = `<span onclick="goHome()">Home</span>`;
+    if (currentPackage) html += ` &gt; <span onclick="showPackage()">${currentPackage}</span>`;
+    if (currentClass) html += ` &gt; <span onclick="showClass()">${currentClass}</span>`;
+    bc.innerHTML = html;
+}
 
-    @Test
-    fun `calculateTotalPercentageSales when grandTotal is null returns 0 percent`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = null
-            tipTotal = BigDecimal("10.00")
+function filterTab(tab, evt) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    if (evt && evt.target) evt.target.classList.add('active');
+    currentTab = tab;
+    goHome();
+}
+
+function findFieldKey(obj, regex) {
+    if (!obj) return null;
+    const keys = Object.keys(obj);
+    for (let k of keys) {
+        if (regex.test(k)) return k;
+    }
+    return null;
+}
+
+function parseNumberSafe(val) {
+    if (val == null || val === '') return 0;
+    const n = Number(String(val).replace(/[^0-9.-]+/g, ''));
+    return isNaN(n) ? 0 : n;
+}
+
+function applySearchFilter(data) {
+    const query = document.getElementById('searchBox').value.toLowerCase().trim();
+    if (!query) return data;
+    return data.filter(row => Object.values(row).some(val => String(val || '').toLowerCase().includes(query)));
+}
+
+function sortData(data, key) {
+    if (!key) return data;
+    if (currentSort.key === key) {
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.key = key;
+        currentSort.order = 'asc';
+    }
+    const ord = currentSort.order === 'asc' ? 1 : -1;
+    return data.sort((a, b) => {
+        const x = a[key] ?? '';
+        const y = b[key] ?? '';
+        const xn = parseNumberSafe(x);
+        const yn = parseNumberSafe(y);
+        if (xn !== 0 || yn !== 0) {
+            return (xn - yn) * ord;
         }
+        return String(x).localeCompare(String(y)) * ord;
+    });
+}
 
-        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+function computeStats(data) {
+    const coveredKey = findFieldKey(data[0] || {}, /covered/i);
+    const missedKey = findFieldKey(data[0] || {}, /missed/i);
+    let totalCovered = 0, totalMissed = 0;
+    data.forEach(d => {
+        totalCovered += parseNumberSafe(d[coveredKey]);
+        totalMissed += parseNumberSafe(d[missedKey]);
+    });
+    const totalCoverage = (totalCovered + totalMissed) > 0 ? ((totalCovered / (totalCovered + totalMissed)) * 100) : 0;
+    return { totalCoverage: Number(totalCoverage.toFixed(2)) };
+}
 
-        assertEquals("0%", result)
+// ================= Summary + Charts =================
+function renderSummary() {
+    const summary = document.getElementById('summary');
+    summary.innerHTML = '';
+
+    const totalPackages = packageData.length;
+    const totalClasses = classData.length;
+    const criticalPackages = packageData.filter(p => String(p['Status'] || '').toLowerCase() === 'critical').length;
+    const totalCoverage = summaryData[0] ? parseNumberSafe(summaryData[0]['Total Coverage (%)']) : 0;
+
+    summary.innerHTML = `
+        <div class="summary-item"><strong>Packages:</strong> ${totalPackages}</div>
+        <div class="summary-item"><strong>Classes:</strong> ${totalClasses}</div>
+        <div class="summary-item"><strong>Critical:</strong> ${criticalPackages}</div>
+        <div class="summary-item"><strong>Total Coverage:</strong> ${totalCoverage.toFixed(2)}%</div>
+    `;
+
+    renderSmallCharts(packageData);
+}
+
+function renderSmallCharts(baseData) {
+    const statuses = ['Critical', 'Poor', 'Fair', 'Good', 'Excellent'];
+    const counts = statuses.map(s => baseData.filter(p => String(p['Status'] || '').toLowerCase() === s.toLowerCase()).length);
+    const totalCoverage = summaryData[0] ? parseNumberSafe(summaryData[0]['Total Coverage (%)']) : 0;
+
+    Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
+    charts = {};
+
+    const pkgCtx = document.getElementById('packageChart').getContext('2d');
+    charts.package = new Chart(pkgCtx, {
+        type: 'pie',
+        data: {
+            labels: statuses,
+            datasets: [{
+                data: counts,
+                backgroundColor: ['#e53935','#fb8c00','#fbc02d','#43a047','#009688']
+            }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } }, maintainAspectRatio: false }
+    });
+
+    const avgCtx = document.getElementById('averageChart').getContext('2d');
+    charts.average = new Chart(avgCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Total Coverage','Remaining'],
+            datasets: [{
+                data: [totalCoverage, Math.max(0, 100 - totalCoverage)],
+                backgroundColor: ['#5c6bc0','#c5cae9']
+            }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } }, maintainAspectRatio: false }
+    });
+}
+
+// ================= Table Rendering =================
+function renderTable(data, level) {
+    const container = document.getElementById('table-container');
+    container.innerHTML = '';
+
+    if (level === 'package') {
+        if (currentTab === 'top') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)']) >= 80);
+        else if (currentTab === 'attention') data = data.filter(p => parseNumberSafe(p['Instruction Coverage (%)']) < 40);
     }
 
-    @Test
-    fun `calculateTotalPercentageSales when grandTotal is zero returns 0 percent`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = BigDecimal.ZERO
-            tipTotal = BigDecimal("5.00")
-        }
+    data = applySearchFilter(data);
+    if (!data.length) { container.innerHTML = '<p style="text-align:center;">No data to display</p>'; return; }
 
-        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const keys = Object.keys(data[0]);
 
-        assertEquals("0%", result)
+    keys.forEach(h => {
+        const th = document.createElement('th');
+        th.innerText = h;
+        th.addEventListener('click', () => {
+            data = sortData(data, h);
+            renderTable(data, level);
+            document.querySelectorAll('th').forEach(header => header.classList.remove('sort-asc','sort-desc'));
+            th.classList.add(currentSort.order === 'asc' ? 'sort-asc' : 'sort-desc');
+        });
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        keys.forEach(key => {
+            const td = document.createElement('td');
+            td.textContent = row[key];
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
+
+// ================= Navigation =================
+function goHome() {
+    currentPackage = null;
+    currentClass = null;
+    updateBreadcrumb();
+    renderSummary();
+    renderTable(packageData, 'package');
+}
+
+// ================= Init =================
+async function init() {
+    document.getElementById('loader').style.display = 'flex';
+    try {
+        packageData = await loadCSV('package_report.csv');
+        classData = await loadCSV('class_report.csv');
+        methodData = await loadCSV('method_report.csv');
+        summaryData = await loadCSV('summary.csv');
+
+        renderSummary();
+        renderTable(packageData, 'package');
+    } catch (error) {
+        console.error(error);
+        document.getElementById('table-container').innerHTML = '<p style="text-align:center;color:red;">Error loading data.</p>';
+    } finally {
+        document.getElementById('loader').style.display = 'none';
     }
+}
 
-    @Test
-    fun `calculateTotalPercentageSales when tipTotal is null returns 0 percent`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = BigDecimal("100.00")
-            tipTotal = null
-        }
+init();
 
-        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
 
-        assertEquals("0%", result)
-    }
 
-    @Test
-    fun `calculateTotalPercentageSales with valid totals returns correct percentage`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = BigDecimal("100.00")
-            tipTotal = BigDecimal("10.00")
-        }
 
-        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
 
-        assertEquals("10%", result)
-    }
 
-    @Test
-    fun `calculateTotalPercentageSales with tip greater than sales returns over 100 percent`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = BigDecimal("100.00")
-            tipTotal = BigDecimal("150.00")
-        }
 
-        val result = BatchReportsHelper.calculateTotalPercentageSales(report)
 
-        assertEquals("150%", result)
-    }
 
-    // ---------------------------
-    // calculateTotalSales
-    // ---------------------------
 
-    @Test
-    fun `calculateTotalSales when grandTotal is null returns 0`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = null
-        }
 
-        val result = BatchReportsHelper.calculateTotalSales(report)
 
-        assertEquals("0", result)
-    }
 
-    @Test
-    fun `calculateTotalSales with non-zero grandTotal formats correctly`() {
-        val report = BatchReportDetailed().apply {
-            grandTotal = BigDecimal("100.50")
-        }
 
-        val result = BatchReportsHelper.calculateTotalSales(report)
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f4f5fa;
+  margin: 0;
+  padding: 0;
+  color: #222;
+}
 
-        assertEquals("100.50", result)
-    }
+header {
+  background: #1976d2;
+  color: white;
+  text-align: center;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
 
-    // ---------------------------
-    // calculateNonCashTips
-    // ---------------------------
+.breadcrumb {
+  padding: 0.75rem 1rem;
+  color: #555;
+  font-size: 0.9rem;
+}
 
-    @Test
-    fun `calculateNonCashTips when tipTotal is null returns 0`() {
-        val report = BatchReportDetailed().apply {
-            tipTotal = null
-        }
+.breadcrumb span {
+  cursor: pointer;
+  color: #1976d2;
+}
 
-        val result = BatchReportsHelper.calculateNonCashTips(report)
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
 
-        assertEquals("0", result)
-    }
+.tab {
+  background: white;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
 
-    @Test
-    fun `calculateNonCashTips with non-zero tipTotal formats correctly`() {
-        val report = BatchReportDetailed().apply {
-            tipTotal = BigDecimal("12.34")
-        }
+.tab.active {
+  background: #1976d2;
+  color: white;
+}
 
-        val result = BatchReportsHelper.calculateNonCashTips(report)
+.top-section {
+  width: 95%;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1rem;
+}
 
-        assertEquals("12.34", result)
-    }
-}                int startHour = 8 + random.nextInt(10); // between 8 AM - 6 PM
-                int duration = 30 + random.nextInt(60); // 30-90 mins
-                int endHour = Math.min(startHour + 1, 20);
+#summary {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+  color: #333;
+  background: #fff;
+  padding: 0.8rem 1.5rem;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
 
-                order.put("startTime", startHour + ":00 AM");
-                order.put("endTime", endHour + ":00 AM");
-                order.put("duration", duration + " min");
+.summary-item strong {
+  color: #1976d2;
+}
 
-                // Customer details
-                String customerName = firstNames[random.nextInt(firstNames.length)] + " " +
-                                      lastNames[random.nextInt(lastNames.length)];
-                order.put("customerName", customerName);
-                order.put("phoneNo", "+1(" + (100 + random.nextInt(900)) + ") " + (100 + random.nextInt(900)) + "-" + (1000 + random.nextInt(9000)));
+.charts-row {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 
-                // Tags
-                order.put("statusTag", random.nextBoolean() ? "Completed" : "Pending");
-                order.put("paymentTag", random.nextBoolean() ? "Paid" : "Unpaid");
-                order.put("staffMember", staffMembers[random.nextInt(staffMembers.length)]);
+.small-chart {
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  text-align: center;
+  width: 240px;
+}
 
-                // Services
-                List<Map<String, Object>> serviceList = new ArrayList<>();
-                int numServices = 1 + random.nextInt(3); // 1–3 services
-                int total = 0;
+.search-container {
+  width: 95%;
+  margin: 1rem auto;
+  text-align: right;
+}
 
-                for (int s = 0; s < numServices; s++) {
-                    Map<String, Object> service = new HashMap<>();
-                    String serviceName = services[random.nextInt(services.length)];
-                    int price = prices[random.nextInt(prices.length)];
-                    service.put("serviceName", serviceName);
-                    service.put("price", price + "$");
-                    serviceList.add(service);
-                    total += price;
-                }
+.search-container input {
+  padding: 0.5rem;
+  width: 250px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
 
-                order.put("services", serviceList);
-                order.put("total", total + "$");
+table {
+  width: 95%;
+  margin: 1rem auto;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+}
 
-                orders.add(order);
-            }
+th, td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
 
-            dateEntry.put("orders", orders);
-            dateEntry.put("noOfOrders", orders.size());
-            datesList.add(dateEntry);
-        }
+th {
+  background: #1976d2;
+  color: white;
+  cursor: pointer;
+}
 
-        jsonData.put("dates", datesList);
+tr:hover {
+  background: #e3f2fd;
+  transition: background 0.2s;
+}
 
-        // Write JSON to file
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectWriter writer = mapper.writerWithDefaultPrettyPrinter();
-        writer.writeValue(new File("dummy_orders.json"), jsonData);
+#loader {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(255,255,255,0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+  color: #1976d2;
+  z-index: 9999;
+}
 
-        System.out.println("✅ dummy_orders.json generated successfully!");
-    }
+.spinner {
+  border: 4px solid #e0e0e0;
+  border-top: 4px solid #1976d2;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.alert {
+  width: 95%;
+  margin: 1rem auto;
+  padding: 1rem;
+  border-radius: 10px;
+  color: white;
+  text-align: center;
+  font-weight: 600;
+}
+
+.alert-critical { background: #d32f2f; }
+.alert-poor { background: #f57c00; }
+
+canvas {
+  width: 100%;
+  height: 180px !important;
 }
