@@ -1,0 +1,832 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import LabelEncoder
+
+# Load dataset
+df = pd.read_csv("yeild.csv")
+
+# Encode categorical columns
+le_area = LabelEncoder()
+le_item = LabelEncoder()
+df['Area'] = le_area.fit_transform(df['Area'])
+df['Item'] = le_item.fit_transform(df['Item'])
+
+# Features and target
+X = df[['Area', 'Item', 'Year', 'average_rain_fall_mm_per_year', 'pesticides_tonnes', 'avg_temp']]
+y = df['hg/ha_yield']
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train RandomForest model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Predict
+y_pred = model.predict(X_test)
+
+# Evaluate model
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print("Mean Squared Error:", mse)
+print("R² Score:", r2)
+
+# Example: Predict for new input (replace values)
+# new_data = [[0, 1, 2025, 1200, 500, 25]]
+# print("Predicted yield:", model.predict(new_data)[0])
+________________________________________________________________________________________
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+
+# ---------------------------
+# Step 1: CNN for Crop Disease Detection (Mock Data)
+# ---------------------------
+# Random image data (simulate 100 RGB crop images)
+X_train_images = np.random.rand(100, 64, 64, 3)
+y_train_images = np.random.randint(2, size=100)  # 0: Healthy, 1: Diseased
+
+# CNN Model
+cnn_model = Sequential()
+cnn_model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(64, 64, 3)))
+cnn_model.add(MaxPooling2D(pool_size=(2, 2)))
+cnn_model.add(Flatten())
+cnn_model.add(Dense(128, activation='relu'))
+cnn_model.add(Dense(1, activation='sigmoid'))
+
+# Compile and train
+cnn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+cnn_model.fit(X_train_images, y_train_images, epochs=5, batch_size=10, verbose=1)
+
+# ---------------------------
+# Step 2: Random Forest for Yield Prediction (Using your CSV)
+# ---------------------------
+# Load your dataset
+df = pd.read_csv("yeild.csv")
+
+# Encode categorical columns (Area, Item)
+le_area = LabelEncoder()
+le_item = LabelEncoder()
+df['Area'] = le_area.fit_transform(df['Area'])
+df['Item'] = le_item.fit_transform(df['Item'])
+
+# Features and target
+X = df[['Area', 'Item', 'Year', 'average_rain_fall_mm_per_year', 'pesticides_tonnes', 'avg_temp']]
+y = df['hg/ha_yield']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Random Forest model
+yield_model = RandomForestRegressor(n_estimators=100, random_state=42)
+yield_model.fit(X_train, y_train)
+
+# ---------------------------
+# Step 3: Recommendation System
+# ---------------------------
+def recommend(disease_prediction, yield_prediction):
+    if disease_prediction >= 0.5:
+        return "🚨 Disease detected! Apply pesticide immediately."
+    elif yield_prediction < 30000:
+        return "⚠️ Low yield predicted! Improve irrigation and soil quality."
+    else:
+        return "✅ Crop is healthy and yield prediction is good."
+
+# ---------------------------
+# Step 4: Simulated Testing
+# ---------------------------
+# Simulate new image for CNN
+test_image = np.random.rand(1, 64, 64, 3)
+disease_prediction = cnn_model.predict(test_image)[0][0]
+
+# Example: Pick one real row from dataset for yield prediction
+test_env_data = X_test.iloc[[0]].values
+yield_prediction = yield_model.predict(test_env_data)[0]
+
+# Get final recommendation
+recommendation = recommend(disease_prediction, yield_prediction)
+
+# ---------------------------
+# Step 5: Display Output
+# ---------------------------
+print(f"Disease Prediction: {disease_prediction:.4f} (0: Healthy, 1: Diseased)")
+print(f"Yield Prediction: {yield_prediction:.2f} hg/ha")
+print(f"Recommendation: {recommendation}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+____________________________________________________________________________________________
+
+# Importing Required Libraries
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import linear_kernel
+
+# Step 1: Load the Dataset
+# (Replace 'movies.csv' with your actual file name)
+movies_df = pd.read_csv("movies.csv")
+
+# Step 2: Check and clean data
+movies_df = movies_df.dropna(subset=['title', 'genres'])  # Remove rows with missing values
+
+# Step 3: Create a TF-IDF Vectorizer for 'genres'
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(movies_df['genres'])
+
+# Step 4: Compute the cosine similarity matrix
+cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+
+# Step 5: Build the Recommendation Function
+def get_recommendations(title, cosine_sim=cosine_sim):
+    # Check if movie title exists
+    if title not in movies_df['title'].values:
+        return f"❌ Movie '{title}' not found in the dataset."
+
+    # Get the index of the movie that matches the title
+    idx = movies_df.index[movies_df['title'] == title][0]
+    
+    # Get the pairwise similarity scores
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    
+    # Sort by similarity score
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    
+    # Get top 5 similar movies (excluding the same one)
+    sim_scores = sim_scores[1:6]
+    
+    # Get movie indices
+    movie_indices = [i[0] for i in sim_scores]
+    
+    # Return top similar movies
+    return movies_df[['title', 'genres']].iloc[movie_indices]
+
+# Step 6: Test the Recommendation System
+movie_name = "Toy Story (1995)"  # Change to any movie title present in your dataset
+recommendations = get_recommendations(movie_name)
+
+print(f"🎬 Recommendations for '{movie_name}':")
+print(recommendations)
+
+____________________________________________________________________________________________
+
+
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import linear_kernel, pairwise_distances
+from scipy.sparse import csr_matrix
+from sklearn.decomposition import TruncatedSVD
+
+# -----------------------------
+# Step 1: Load Datasets
+# -----------------------------
+# Replace the paths with your actual file paths
+movies_df = pd.read_csv('movies.csv')      # columns: movieId, title, genres
+ratings_df = pd.read_csv('ratings.csv')    # columns: userId, movieId, rating, timestamp
+
+# -----------------------------
+# Step 2: Preprocess Data for Content-Based Filtering
+# -----------------------------
+# Replace NaN genres with an empty string
+movies_df['genres'] = movies_df['genres'].fillna('')
+
+# TF-IDF Vectorization on genres
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(movies_df['genres'])
+
+# Compute cosine similarity between movies
+cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+
+# -----------------------------
+# Step 3: Collaborative Filtering (Matrix Factorization)
+# -----------------------------
+# Create user-item matrix
+user_item_matrix = ratings_df.pivot(index='userId', columns='movieId', values='rating').fillna(0)
+user_item_sparse = csr_matrix(user_item_matrix.values)
+
+# Apply SVD for dimensionality reduction
+svd = TruncatedSVD(n_components=20, random_state=42)
+latent_matrix = svd.fit_transform(user_item_sparse)
+
+# -----------------------------
+# Step 4: Define Recommendation Functions
+# -----------------------------
+def get_content_based_recommendations(movie_title, cosine_sim=cosine_sim):
+    if movie_title not in movies_df['title'].values:
+        return ["Movie not found in dataset."]
+    
+    idx = movies_df.index[movies_df['title'] == movie_title][0]
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    movie_indices = [i[0] for i in sim_scores[1:6]]  # Top 5 similar movies
+    return movies_df['title'].iloc[movie_indices].tolist()
+
+def get_collaborative_recommendations(user_id):
+    user_ids = ratings_df['userId'].unique().tolist()
+    if user_id not in user_ids:
+        return ["User not found in dataset."]
+    
+    user_idx = user_ids.index(user_id)
+    distances = pairwise_distances(latent_matrix[user_idx].reshape(1, -1), latent_matrix, metric='cosine')[0]
+    similar_users_indices = distances.argsort()[1:4]  # Skip itself
+    
+    recommended_movies = []
+    for idx in similar_users_indices:
+        similar_user_id = user_ids[idx]
+        user_movies = ratings_df[ratings_df['userId'] == similar_user_id]['movieId'].tolist()
+        recommended_movies.extend(user_movies)
+    
+    recommended_titles = movies_df[movies_df['movieId'].isin(recommended_movies)]['title'].tolist()
+    return list(set(recommended_titles))
+
+# -----------------------------
+# Step 5: Combine Both Approaches
+# -----------------------------
+def hybrid_recommendations(user_id, movie_title):
+    content_based = get_content_based_recommendations(movie_title)
+    collaborative_based = get_collaborative_recommendations(user_id)
+    
+    # Combine and remove duplicates
+    combined = list(set(content_based + collaborative_based))
+    return combined
+
+# -----------------------------
+# Step 6: Example Usage
+# -----------------------------
+user_id = 1
+movie_title = 'Toy Story (1995)'  # Example from MovieLens dataset
+
+recommended_movies = hybrid_recommendations(user_id, movie_title)
+
+print(f"Hybrid Recommendations for user {user_id} and movie '{movie_title}':")
+print(recommended_movies)
+
+
+____________________________________________________________________________________________
+
+# Step 1: Import required libraries
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Step 2: Load your dataset
+# Replace 'cancer_data.csv' with your actual CSV file path
+df = pd.read_csv('cancer_data.csv')
+
+# Display first few rows
+print("Dataset preview:\n", df.head())
+
+# Step 3: Encode categorical columns
+# Automatically detect object (string) columns and encode them
+label_encoders = {}
+for col in df.select_dtypes(include=['object']).columns:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col].astype(str))
+    label_encoders[col] = le
+
+# Step 4: Define features (X) and target (y)
+# Assuming your target column is 'Status' (replace with actual column name if different)
+X = df.drop(columns=['Status'])
+y = df['Status']
+
+# Step 5: Split dataset into train and test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Step 6: Train RandomForest model
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Step 7: Make predictions
+y_pred = model.predict(X_test)
+
+# Step 8: Evaluate model
+print("\nModel Accuracy:", round(accuracy_score(y_test, y_pred) * 100, 2), "%")
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+
+# Step 9: Function for prognosis recommendation
+def prognosis_recommendation(features):
+    """
+    Function to provide prognosis recommendation based on model predictions.
+    :param features: List or array of patient features (in same order as X.columns)
+    :return: String recommendation
+    """
+    prediction = model.predict([features])
+    if prediction[0] == 0:
+        return "High risk of malignant cancer. Immediate consultation and further tests recommended."
+    else:
+        return "Low risk or benign case. Routine monitoring and follow-up with healthcare provider suggested."
+
+# Step 10: Example usage
+example_patient = X_test.iloc[0].values
+recommendation = prognosis_recommendation(example_patient)
+print("\nRecommendation for example patient:", recommendation)
+____________________________________________________________________________________________
+
+# Step 1: Import Libraries
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Step 2: Load Dataset
+# Replace with your CSV file
+df = pd.read_csv("cleaned.csv")
+
+# Display dataset structure
+print("Dataset Preview:\n", df.head())
+
+# Step 3: Preprocessing
+# We'll assume 'product_title' and 'product_category' represent items,
+# and simulate user-product interactions using 'product_rating' or 'purchased_last_month'.
+
+# If there are no explicit users, we can treat each category as a "pseudo-user"
+# (useful for unsupervised recommendation)
+user_item_matrix = df.pivot_table(
+    index='product_category',
+    columns='product_title',
+    values='product_rating',
+    fill_value=0
+)
+
+print("\nUser-Item Matrix shape:", user_item_matrix.shape)
+
+# Step 4: Apply Matrix Factorization (SVD)
+# Reduce dimensionality to learn latent factors of products and users
+svd = TruncatedSVD(n_components=5, random_state=42)
+latent_matrix = svd.fit_transform(user_item_matrix)
+
+# Step 5: Compute Similarity Matrix
+similarity_matrix = cosine_similarity(latent_matrix, latent_matrix)
+similarity_df = pd.DataFrame(
+    similarity_matrix, 
+    index=user_item_matrix.index, 
+    columns=user_item_matrix.index
+)
+
+# Step 6: Function to Recommend Similar Products
+def recommend_products(category_name, top_n=5):
+    """
+    Recommend similar product categories based on matrix factorization.
+    """
+    if category_name not in similarity_df.index:
+        return "Category not found in dataset."
+
+    similar_scores = similarity_df[category_name].sort_values(ascending=False)
+    top_categories = similar_scores.iloc[1:top_n+1]
+    return top_categories
+
+# Step 7: Example Usage
+category_name = "Phones"  # change based on your dataset
+recommendations = recommend_products(category_name)
+print(f"\nTop Recommended Categories similar to '{category_name}':\n")
+print(recommendations)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+____________________________________________________________________________________________
+🧠 Theory for All Five Codes (Deep + Practical Revision Notes)
+1️⃣ Crop Yield Prediction (Regression Task using Environmental Data)
+
+Concepts Covered:
+
+Supervised Learning
+
+Regression (continuous value prediction)
+
+Feature engineering (rainfall, temperature, pesticides, etc.)
+
+Model evaluation (R², MAE, MSE)
+
+Theory:
+
+🔹 What is Crop Yield Prediction?
+
+Crop yield prediction uses past data like rainfall, temperature, pesticide use, and average humidity to predict agricultural output (yield per hectare). It’s a regression problem, where the target variable (hg/ha_yield) is continuous.
+
+🔹 Dataset Columns:
+Feature	Description
+Area	Country or region where crop is grown
+Item	Crop type
+Year	Year of production
+hg/ha_yield	Target variable – yield per hectare
+average_rain_fall_mm_per_year	Average rainfall
+pesticides_tonnes	Pesticide usage
+avg_temp	Average temperature
+🔹 Key Algorithms:
+
+Linear Regression: Models relationship as a straight line between dependent and independent variables.
+
+𝑌
+=
+𝛽
+0
++
+𝛽
+1
+𝑋
+1
++
+𝛽
+2
+𝑋
+2
++
+.
+.
+.
++
+𝛽
+𝑛
+𝑋
+𝑛
+Y=β
+0
+	​
+
++β
+1
+	​
+
+X
+1
+	​
+
++β
+2
+	​
+
+X
+2
+	​
+
++...+β
+n
+	​
+
+X
+n
+	​
+
+
+Random Forest Regressor / Decision Tree Regressor: Captures non-linear patterns by averaging results from multiple decision trees.
+
+🔹 Evaluation Metrics:
+
+MSE (Mean Squared Error): Average of squared differences between actual and predicted values.
+
+MAE (Mean Absolute Error): Average of absolute errors.
+
+R² (Coefficient of Determination): Measures goodness of fit (closer to 1 = better).
+
+🔹 Steps Involved:
+
+Data cleaning (handle missing values, outliers)
+
+Feature selection
+
+Split data into train/test sets
+
+Train regression model
+
+Evaluate using R², MSE, MAE
+
+Predict yield for unseen data
+
+2️⃣ Movie Recommendation System (Collaborative Filtering – Matrix Factorization)
+
+Concepts Covered:
+
+Recommender Systems
+
+Collaborative Filtering
+
+Matrix Factorization (SVD / ALS)
+
+User–Item interaction matrix
+
+Theory:
+
+🔹 What is a Recommender System?
+
+A recommender system suggests items (like movies or products) based on user preferences.
+Types:
+
+Content-based filtering: Based on item features (genre, description).
+
+Collaborative filtering: Based on past behavior of similar users.
+
+Hybrid: Combination of both.
+
+🔹 Collaborative Filtering (Matrix Factorization)
+
+We use a user-item rating matrix, where:
+
+Rows → Users
+
+Columns → Items (movies/products)
+
+Values → Ratings
+
+Example:
+
+userId	movieId	rating
+1	31	4.0
+1	1029	5.0
+2	31	3.0
+
+Matrix factorization decomposes this large sparse matrix R into two smaller matrices:
+
+𝑅
+≈
+𝑃
+×
+𝑄
+𝑇
+R≈P×Q
+T
+
+where
+
+P: User feature matrix
+
+Q: Item feature matrix
+
+We minimize error:
+
+min
+⁡
+∑
+(
+𝑅
+𝑢
+𝑖
+−
+𝑃
+𝑢
+⋅
+𝑄
+𝑖
+)
+2
++
+𝜆
+(
+∣
+∣
+𝑃
+𝑢
+∣
+∣
+2
++
+∣
+∣
+𝑄
+𝑖
+∣
+∣
+2
+)
+min∑(R
+ui
+	​
+
+−P
+u
+	​
+
+⋅Q
+i
+	​
+
+)
+2
++λ(∣∣P
+u
+	​
+
+∣∣
+2
++∣∣Q
+i
+	​
+
+∣∣
+2
+)
+
+Popular Algorithms:
+
+SVD (Singular Value Decomposition)
+
+ALS (Alternating Least Squares)
+
+Non-negative Matrix Factorization (NMF)
+
+Evaluation Metrics:
+
+RMSE (Root Mean Squared Error)
+
+MAE (Mean Absolute Error)
+
+3️⃣ Product Recommendation System for E-commerce (Matrix Factorization on Product Data)
+
+Concepts Covered:
+
+Real-world recommender systems
+
+Data preprocessing from product attributes
+
+Matrix factorization on product ratings
+
+Ranking recommendations
+
+🔹 Dataset Columns:
+Column	Description
+product_title	Product name
+product_rating	Average customer rating
+total_reviews	Number of reviews
+purchased_last_month	Count of recent purchases
+discounted_price	Sale price
+original_price	MRP
+is_best_seller	Boolean flag
+has_coupon	Discount availability
+product_category	Product category
+discount_percentage	Calculated feature
+🔹 Steps:
+
+Clean and normalize numeric features
+
+Convert categorical data (e.g., category, seller type) to numeric
+
+Construct a user–product rating matrix
+
+Apply Matrix Factorization (SVD/ALS) to learn latent features
+
+Recommend products based on predicted scores
+
+🔹 Why Matrix Factorization Works Well:
+
+It captures hidden relationships — for instance, users preferring “budget electronics” or “eco-friendly clothes” — even if they never rated the same product before.
+
+4️⃣ Dataset Combination and Exploration (File Merging & Preprocessing)
+
+Concepts Covered:
+
+Data preprocessing
+
+Handling multiple CSVs (merge/join)
+
+Exploratory Data Analysis (EDA)
+
+🔹 Purpose:
+
+Before any ML algorithm, data must be prepared. When multiple CSV files exist (e.g., movies.csv, ratings.csv), merging them helps create a structured dataset.
+
+🔹 Common Operations:
+
+Merging datasets:
+
+merged_df = pd.merge(ratings, movies, on='movieId')
+
+
+Handling missing values:
+
+df.fillna(df.mean(), inplace=True)
+
+
+Feature scaling:
+Standardization or normalization for algorithms sensitive to magnitude.
+
+Exploratory Data Analysis:
+
+Mean, median, mode
+
+Correlation heatmaps
+
+Value counts
+
+Outlier detection (IQR method)
+
+🔹 Why It Matters:
+
+Clean data → better predictions, fewer biases, and robust models.
+
+5️⃣ Synthetic Data Generation Techniques
+
+Concepts Covered:
+
+Data augmentation
+
+SMOTE (Synthetic Minority Oversampling Technique)
+
+Image and text augmentation
+
+GANs for synthetic data
+
+🔹 Purpose:
+
+Used when the dataset is small or imbalanced. Synthetic data helps improve model generalization.
+
+🔹 Techniques:
+
+Noise Addition: Add Gaussian noise to numeric data.
+
+Random Sampling: Generate similar points using mean and variance.
+
+SMOTE (for classification): Creates synthetic minority samples by interpolating between real points.
+
+Data Augmentation (images):
+
+Rotation, flipping, cropping
+
+Color jitter, scaling
+
+GANs (Generative Adversarial Networks):
+Neural networks that generate new, realistic data by learning from real samples.
+
+🧩 Summary Table
+Code	Domain	Algorithm/Concept	Task Type
+1	Agriculture	Regression (Linear/Random Forest)	Yield prediction
+2	Movies	Collaborative Filtering (Matrix Factorization)	Recommendation
+3	E-commerce	Matrix Factorization	Product recommendation
+4	General ML	Data preprocessing & merging	EDA & cleaning
+5	Data Engineering	Synthetic data generation	Data augmentation
+🧠 Exam Tip Section
+
+✅ Revise basic formulas (MSE, MAE, RMSE, R²).
+✅ Be ready to explain:
+
+Why normalization is important
+
+What overfitting and underfitting mean
+
+How matrix factorization works
+✅ If asked about limitations, say:
+
+“Cold-start problem occurs when new users or items have no ratings, making collaborative filtering less effective.”
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
