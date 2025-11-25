@@ -19,295 +19,670 @@ public:
         
     }
 
-};package com.imobile3.pos.data.module.batch.close
+}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coverage Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="tabs">
+        <button id="tabDashboard" class="active">Dashboard</button>
+        <button id="tabCompare">Compare Releases</button>
+    </div>
 
-import com.imobile3.pos.app.constants.intdefs.BatchCloseState
-import com.imobile3.pos.library.domainobjects.BatchReport
-import com.imobile3.pos.library.domainobjects.BatchReportDetailed
-import com.imobile3.pos.library.domainobjects.TxDbBatch
-import com.imobile3.pos.library.domainobjects.TxDbBatchTransfer
-import org.junit.Assert.*
-import org.junit.Test
-import org.mockito.Mockito
-import java.util.Date
+    <input type="text" id="searchBox" placeholder="Search packages/classes/methods..." />
 
-class BatchCloseResponseTest {
+    <button id="backBtn" style="display:none">⬅ Back</button>
 
-    @Test
-    fun testDefaultValues() {
-        val response = BatchCloseResponse()
+    <table id="dataTable"></table>
 
-        // Defaults
-        assertEquals(0, response.state)
-        assertNull(response.attemptedDateTime)
-        assertNull(response.batch)
-        assertNull(response.batchReport)
-        assertNull(response.batchReportDetailed)
-        assertNull(response.batchTransfers)
-    }
+    <script src="script.js"></script>
+</body>
+</html>
 
-    @Test
-    fun testStateSetterGetter() {
-        val response = BatchCloseResponse()
 
-        response.state = BatchCloseState.SUCCESS
-        assertEquals(BatchCloseState.SUCCESS, response.state)
+// -------------------------------
+// FULL script.js - Dashboard + Full Comparison (Option B)
+// -------------------------------
 
-        response.state = BatchCloseState.FAILED
-        assertEquals(BatchCloseState.FAILED, response.state)
-    }
+// GLOBAL STATE
+let packageData = [];
+let classData = [];
+let methodData = [];
 
-    @Test
-    fun testAttemptedDateTimeSetterGetter() {
-        val response = BatchCloseResponse()
+let oldPackageData = [];
+let oldClassData = [];
+let oldMethodData = [];
 
-        val date = Date()
-        response.attemptedDateTime = date
-        assertEquals(date, response.attemptedDateTime)
+let currentLevel = "package"; // 'package'|'class'|'method'|'comp-package'|'comp-class'|'comp-method'
+let currentPackage = null;
+let currentClass = null;
 
-        // Set to null to test nullability
-        response.attemptedDateTime = null
-        assertNull(response.attemptedDateTime)
-    }
+let currentSort = { key: null, asc: true }; // used across views
+let inComparison = false;
 
-    @Test
-    fun testBatchSetterGetter() {
-        val response = BatchCloseResponse()
-
-        val batch = Mockito.mock(TxDbBatch::class.java)
-        response.batch = batch
-        assertEquals(batch, response.batch)
-
-        response.batch = null
-        assertNull(response.batch)
-    }
-
-    @Test
-    fun testBatchReportSetterGetter() {
-        val response = BatchCloseResponse()
-
-        val report = Mockito.mock(BatchReport::class.java)
-        response.batchReport = report
-        assertEquals(report, response.batchReport)
-
-        response.batchReport = null
-        assertNull(response.batchReport)
-    }
-
-    @Test
-    fun testBatchReportDetailedSetterGetter() {
-        val response = BatchCloseResponse()
-
-        val detailedReport = Mockito.mock(BatchReportDetailed::class.java)
-        response.batchReportDetailed = detailedReport
-        assertEquals(detailedReport, response.batchReportDetailed)
-
-        response.batchReportDetailed = null
-        assertNull(response.batchReportDetailed)
-    }
-
-    @Test
-    fun testBatchTransfersSetterGetter() {
-        val response = BatchCloseResponse()
-
-        val item1 = Mockito.mock(TxDbBatchTransfer::class.java)
-        val item2 = Mockito.mock(TxDbBatchTransfer::class.java)
-        val list = listOf(item1, item2)
-
-        response.batchTransfers = list
-        assertEquals(2, response.batchTransfers?.size)
-        assertEquals(item1, response.batchTransfers?.get(0))
-        assertEquals(item2, response.batchTransfers?.get(1))
-
-        response.batchTransfers = null
-        assertNull(response.batchTransfers)
-    }
+// Utility: safe parse to number (returns NaN if not numeric)
+function toNum(v) {
+  if (v === null || v === undefined || v === "") return NaN;
+  // parseFloat handles decimals; trim first
+  return parseFloat(String(v).trim());
 }
 
-    @Mock
-    private lateinit var mockDao: TransactionsDao
+// -------------------------------
+// CSV LOADING (simple split-by-comma loader)
+// - Assumes first row is header
+// - Returns array of objects keyed by header
+// -------------------------------
+async function fetchText(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
+  return await res.text();
+}
 
-    private lateinit var mockCursor: Cursor
-    private lateinit var loader: BatchReportLoader
+function parseCSVText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+  if (lines.length === 0) return [];
+  const headers = lines[0].split(",").map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map(c => c.trim());
+    const obj = {};
+    for (let j = 0; j < headers.length; j++) obj[headers[j]] = cols[j] ?? "";
+    rows.push(obj);
+  }
+  return rows;
+}
 
-    @BeforeEach
-    fun setup() {
-        mockCursor = mockk(relaxed = true) // relaxed avoids NPE on close(), moveToNext(), etc.
-        loader = BatchReportLoader(mockContext, listOf(1001L))
+async function loadAllCSVs() {
+  try {
+    const [
+      pkgTxt, clsTxt, metTxt,
+      oldPkgTxt, oldClsTxt, oldMetTxt
+    ] = await Promise.all([
+      fetchText("package_report.csv"),
+      fetchText("class_report.csv"),
+      fetchText("method_report.csv"),
+      fetchText("package_report.csv"),
+      fetchText("class_report.csv"),
+      fetchText("method_report.csv")
+    ]);
 
-        // Inject the mock DAO into loader (private field)
-        val daoField = loader.javaClass.getDeclaredField("mDao")
-        daoField.isAccessible = true
-        daoField.set(loader, mockDao)
+    const pkgRows = parseCSVText(pkgTxt);
+    const clsRows = parseCSVText(clsTxt);
+    const metRows = parseCSVText(metTxt);
+
+    const oldPkgRows = parseCSVText(oldPkgTxt);
+    const oldClsRows = parseCSVText(oldClsTxt);
+    const oldMetRows = parseCSVText(oldMetTxt);
+
+    // Normalize current data into simpler keys we use
+    packageData = pkgRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      classes: toNum(r["Total Classes"] ?? r["Classes"] ?? r["total_classes"] ?? ""),
+      methods: toNum(r["Total Methods"] ?? r["methods"] ?? ""),
+      lines: toNum(r["Total Lines"] ?? r["Lines"] ?? ""),
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
+      status: r["Status"] ?? ""
+    }));
+
+    classData = clsRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      class: r["Class"] ?? r["class"] ?? "",
+      methods: toNum(r["Total Methods"] ?? r["methods"] ?? ""),
+      lines: toNum(r["Total Lines"] ?? r["Lines"] ?? ""),
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
+      status: r["Status"] ?? ""
+    }));
+
+    methodData = metRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      class: r["Class"] ?? r["class"] ?? "",
+      method: r["Method"] ?? r["method"] ?? "",
+      line: r["Line Number"] ?? r["Line"] ?? r["line"] ?? "",
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
+      status: r["Status"] ?? ""
+    }));
+
+    // Old data
+    oldPackageData = oldPkgRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
+    }));
+
+    oldClassData = oldClsRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      class: r["Class"] ?? r["class"] ?? "",
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
+    }));
+
+    oldMethodData = oldMetRows.map(r => ({
+      package: r["Package"] ?? r["package"] ?? "",
+      class: r["Class"] ?? r["class"] ?? "",
+      method: r["Method"] ?? r["method"] ?? "",
+      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
+      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? r["branch"] ?? ""),
+      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
+    }));
+
+    // initial render
+    renderPackages();
+  } catch (err) {
+    console.error(err);
+    alert("Failed to load CSVs. Check console for errors.");
+  }
+}
+
+// -------------------------------
+// SEARCH FILTER
+// -------------------------------
+function applySearchFilter(data) {
+  const qEl = document.getElementById("searchBox");
+  const q = qEl ? String(qEl.value || "").toLowerCase().trim() : "";
+  if (!q) return data;
+  return data.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(q)));
+}
+
+// -------------------------------
+// SORTING (numeric-aware)
+// - sortData mutates array (like Array.sort) and returns it
+// -------------------------------
+function sortData(data, key, asc = true) {
+  return data.sort((a, b) => {
+    const A = a[key];
+    const B = b[key];
+    const nA = toNum(A);
+    const nB = toNum(B);
+    if (!isNaN(nA) && !isNaN(nB)) return asc ? nA - nB : nB - nA;
+    const sA = String(A ?? "").toLowerCase();
+    const sB = String(B ?? "").toLowerCase();
+    return asc ? sA.localeCompare(sB) : sB.localeCompare(sA);
+  });
+}
+
+// -------------------------------
+// RENDER TABLE (generic)
+// -------------------------------
+function renderTable(columns, rows, clickHandler = null) {
+  const table = document.getElementById("dataTable");
+  if (!table) {
+    console.error("dataTable element not found");
+    return;
+  }
+  table.innerHTML = "";
+
+  const thead = document.createElement("thead");
+  const tr = document.createElement("tr");
+  for (const col of columns) {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    th.style.cursor = "pointer";
+    th.onclick = () => {
+      // Special handling: when in comparison views default sort is descending by delta if key starts with 'delta'
+      if (inComparison && col.key.startsWith("delta_") && currentSort.key !== col.key) {
+        currentSort = { key: col.key, asc: false }; // default DESC for delta
+      } else if (currentSort.key === col.key) {
+        currentSort.asc = !currentSort.asc;
+      } else {
+        currentSort = { key: col.key, asc: true };
+      }
+      // Apply sort on visible rows (re-render via current view)
+      renderSorted(col.key);
+    };
+    tr.appendChild(th);
+  }
+  thead.appendChild(tr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of rows) {
+    const trRow = document.createElement("tr");
+    if (clickHandler) trRow.onclick = () => clickHandler(row);
+    for (const col of columns) {
+      const td = document.createElement("td");
+      // allow HTML in cell if user provided (like colored spans)
+      td.innerHTML = row[col.key] === undefined ? "" : row[col.key];
+      trRow.appendChild(td);
     }
+    tbody.appendChild(trRow);
+  }
+  table.appendChild(tbody);
+}
 
-    // ---------------------------------------------------------------------
-    // 1. loadInBackground()
-    // ---------------------------------------------------------------------
-    @Test
-    fun `loadInBackground returns one response per batch`() {
-        val report = BatchReport().apply { setTipAdjustTenderCount(3) }
+// -------------------------------
+// DASHBOARD VIEWS (unchanged behavior)
+// -------------------------------
+function renderPackages(sortKey = null) {
+  inComparison = false;
+  currentLevel = "package";
+  currentPackage = null;
+  currentClass = null;
+  document.getElementById("backBtn").style.display = "none";
 
-        // mock private method call by replacing it through reflection
-        val getBatchMethod = loader.javaClass.getDeclaredMethod("getBatchReport", Long::class.java)
-        getBatchMethod.isAccessible = true
-        getBatchMethod.invoke(loader, 1001L)
+  let rows = packageData.map(r => ({ ...r })); // shallow copy
+  if (sortKey) {
+    // toggle behavior handled by renderSorted
+    rows = sortData(rows, sortKey, currentSort.asc);
+  } else if (currentSort.key && currentSort.key !== null) {
+    rows = sortData(rows, currentSort.key, currentSort.asc);
+  }
 
-        // Instead of deep testing internals, stub the DAO so no crash
-        every { mockDao.getTransactions(any()) } returns mockCursor
-        every { mockCursor.moveToFirst() } returns false
+  rows = applySearchFilter(rows);
 
-        val responses = loader.loadInBackground()
+  renderTable([
+    { key: "package", label: "Package" },
+    { key: "classes", label: "Total Classes" },
+    { key: "inst", label: "Instruction %" },
+    { key: "branch", label: "Branch %" },
+    { key: "avg", label: "Average %" },
+    { key: "status", label: "Status" }
+  ], rows, row => renderClasses(row.package));
+}
 
-        Assertions.assertEquals(1, responses.size)
-        Assertions.assertEquals(1001L, responses.first().batchNumber)
-        Assertions.assertNotNull(responses.first().batchReport)
-    }
+function renderClasses(pkgName, sortKey = null) {
+  inComparison = false;
+  currentLevel = "class";
+  currentPackage = pkgName;
+  currentClass = null;
+  document.getElementById("backBtn").style.display = "inline-block";
 
-    // ---------------------------------------------------------------------
-    // 2. getBatchReport() — handles cancelled and valid transactions
-    // ---------------------------------------------------------------------
-    @Test
-    fun `getBatchReport skips cancelled and processes valid transactions`() {
-        val txCancelled = TxDbTransaction().apply {
-            transactionStatusType = TransactionStatusType.Cancelled
-        }
-        val txValid = TxDbTransaction().apply {
-            transactionStatusType = TransactionStatusType.Completed
-            transactionNumber = 2222L
-            userId = 10
-            totalTips = BigDecimal("5.00")
-        }
+  let rows = classData.filter(r => r.package === pkgName).map(r => ({ ...r }));
+  if (sortKey) rows = sortData(rows, sortKey, currentSort.asc);
+  else if (currentSort.key) rows = sortData(rows, currentSort.key, currentSort.asc);
 
-        // Tenders for valid transaction
-        val tender = TxDbTender().apply {
-            tenderStatusType = TenderStatusType.Completed
-            tenderType = TenderType.Normal
-            paymentType = PaymentType.Cash
-            tenderCreditStatusType = TenderCreditStatusType.Authorized
-            totalAmount = BigDecimal("20.00")
-            amountReceived = BigDecimal("20.00")
-        }
+  rows = applySearchFilter(rows);
 
-        // Cursor mocking
-        every { mockDao.getTransactions(1001L) } returns mockCursor
-        every { mockCursor.moveToFirst() } returns true
-        every { mockCursor.moveToNext() } returnsMany listOf(true, false)
-        every { mockDao.getTxDbTransactionFromCursor(mockCursor) } returnsMany listOf(txCancelled, txValid)
-        every { mockDao.getTendersByTransactionNumber(2222L) } returns listOf(tender)
-        every { mockCursor.close() } just runs
+  renderTable([
+    { key: "class", label: "Class" },
+    { key: "methods", label: "Total Methods" },
+    { key: "inst", label: "Instruction %" },
+    { key: "branch", label: "Branch %" },
+    { key: "avg", label: "Average %" },
+    { key: "status", label: "Status" }
+  ], rows, row => renderMethods(row.class));
+}
 
-        // Invoke private getBatchReport(long)
-        val method = loader.javaClass.getDeclaredMethod("getBatchReport", Long::class.java)
-        method.isAccessible = true
-        val report = method.invoke(loader, 1001L) as BatchReport
+function renderMethods(className, sortKey = null) {
+  inComparison = false;
+  currentLevel = "method";
+  currentClass = className;
+  document.getElementById("backBtn").style.display = "inline-block";
 
-        Assertions.assertEquals(1, report.deposits.size)
-        Assertions.assertEquals(PaymentType.Cash, report.deposits.first().paymentType)
-        Assertions.assertEquals(BigDecimal("20.00"), report.deposits.first().totalAmount)
-        Assertions.assertEquals(BigDecimal("5.00"), report.userTipTotalMap.get(10))
-    }
+  let rows = methodData.filter(r => r.class === className).map(r => ({ ...r }));
+  if (sortKey) rows = sortData(rows, sortKey, currentSort.asc);
+  else if (currentSort.key) rows = sortData(rows, currentSort.key, currentSort.asc);
 
-    // ---------------------------------------------------------------------
-    // 3. generateDeposits() — combines same tender type amounts
-    // ---------------------------------------------------------------------
-    @Test
-    fun `generateDeposits adds and combines deposits`() {
-        val tender1 = TxDbTender().apply {
-            tenderStatusType = TenderStatusType.Completed
-            tenderType = TenderType.Normal
-            paymentType = PaymentType.CreditCard
-            tenderCreditStatusType = TenderCreditStatusType.Authorized
-            totalAmount = BigDecimal("50.00")
-            amountReceived = BigDecimal("50.00")
-        }
-        val tender2 = TxDbTender().apply {
-            tenderStatusType = TenderStatusType.Completed
-            tenderType = TenderType.Normal
-            paymentType = PaymentType.CreditCard
-            tenderCreditStatusType = TenderCreditStatusType.Authorized
-            totalAmount = BigDecimal("25.00")
-            amountReceived = BigDecimal("25.00")
-        }
+  rows = applySearchFilter(rows);
 
-        val report = BatchReport()
-        val reportField = loader.javaClass.getDeclaredField("mReport")
-        reportField.isAccessible = true
-        reportField.set(loader, report)
+  renderTable([
+    { key: "method", label: "Method" },
+    { key: "line", label: "Line" },
+    { key: "inst", label: "Instruction %" },
+    { key: "branch", label: "Branch %" },
+    { key: "avg", label: "Average %" },
+    { key: "status", label: "Status" }
+  ], rows);
+}
 
-        val method = loader.javaClass.getDeclaredMethod("generateDeposits", List::class.java)
-        method.isAccessible = true
-        method.invoke(loader, listOf(tender1, tender2))
+// -------------------------------
+// COMPARISON VIEWS (full delta at package/class/method level)
+// -------------------------------
+// Helper: lookup old values by package/class/method
+const oldPackageMap = () => {
+  const m = new Map();
+  for (const r of oldPackageData) m.set(r.package, r);
+  return m;
+};
+const oldClassMap = () => {
+  const m = new Map();
+  for (const r of oldClassData) m.set(`${r.package}||${r.class}`, r);
+  return m;
+};
+const oldMethodMap = () => {
+  const m = new Map();
+  for (const r of oldMethodData) m.set(`${r.package}||${r.class}||${r.method}`, r);
+  return m;
+};
 
-        val deposits = report.deposits
-        Assertions.assertEquals(1, deposits.size)
-        Assertions.assertEquals(BigDecimal("75.00"), deposits.first().totalAmount)
-        Assertions.assertEquals(PaymentType.CreditCard, deposits.first().paymentType)
-    }
+function renderComparisonPackages(sortKey = null) {
+  inComparison = true;
+  currentLevel = "comp-package";
+  currentPackage = null;
+  currentClass = null;
+  document.getElementById("backBtn").style.display = "none";
 
-    // ---------------------------------------------------------------------
-    // 4. removeZeroTotalDeposits()
-    // ---------------------------------------------------------------------
-    @Test
-    fun `removeZeroTotalDeposits filters out zero deposits`() {
-        val d1 = BatchDepositDto().apply { totalAmount = BigDecimal.ZERO }
-        val d2 = BatchDepositDto().apply { totalAmount = BigDecimal("10.00") }
+  const prevMap = oldPackageMap();
+  const changed = [];
 
-        val report = BatchReport().apply { setDeposits(listOf(d1, d2)) }
-        val reportField = loader.javaClass.getDeclaredField("mReport")
-        reportField.isAccessible = true
-        reportField.set(loader, report)
+  for (const cur of packageData) {
+    const prev = prevMap.get(cur.package);
+    if (!prev) continue;
+    const di = Number((cur.inst - prev.inst).toFixed(2));
+    const db = Number((cur.branch - prev.branch).toFixed(2));
+    const da = Number((cur.avg - prev.avg).toFixed(2));
+    if (di === 0 && db === 0 && da === 0) continue;
+    changed.push({
+      package: cur.package,
+      // store numeric delta too for sorting if needed
+      delta_inst: di,
+      delta_branch: db,
+      delta_avg: da,
+      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
+      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
+      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
+    });
+  }
 
-        val method = loader.javaClass.getDeclaredMethod("removeZeroTotalDeposits")
-        method.isAccessible = true
-        method.invoke(loader)
+  // default sort: largest avg delta descending
+  if (!sortKey) {
+    changed.sort((a,b) => b.delta_avg - a.delta_avg);
+    currentSort = { key: "delta_avg", asc: false };
+  } else {
+    // if user click to sort, use that key (supports delta_inst/delta_branch/delta_avg or inst/branch/avg)
+    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
+    changed.sort((a,b) => {
+      const A = a[sortKey], B = b[sortKey];
+      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
+      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
+    });
+  }
 
-        Assertions.assertEquals(1, report.deposits.size)
-        Assertions.assertEquals(BigDecimal("10.00"), report.deposits.first().totalAmount)
-    }
+  const rows = changed.map(r => ({
+    package: r.package,
+    inst: r.inst,
+    branch: r.branch,
+    avg: r.avg,
+    delta_inst: r.delta_inst,
+    delta_branch: r.delta_branch,
+    delta_avg: r.delta_avg
+  }));
 
-    // ---------------------------------------------------------------------
-    // 5. generateUserTipTotal()
-    // ---------------------------------------------------------------------
-    @Test
-    fun `generateUserTipTotal aggregates per user`() {
-        val tx1 = TxDbTransaction().apply {
-            userId = 1
-            totalTips = BigDecimal("3.00")
-        }
-        val tx2 = TxDbTransaction().apply {
-            userId = 1
-            totalTips = BigDecimal("2.00")
-        }
+  renderTable([
+    { key: "package", label: "Package" },
+    { key: "inst", label: "Instruction (cur ±Δ)" },
+    { key: "branch", label: "Branch (cur ±Δ)" },
+    { key: "avg", label: "Average (cur ±Δ)" }
+  ], rows, row => renderComparisonClasses(row.package));
+}
 
-        val report = BatchReport()
-        val reportField = loader.javaClass.getDeclaredField("mReport")
-        reportField.isAccessible = true
-        reportField.set(loader, report)
+function renderComparisonClasses(pkgName, sortKey = null) {
+  inComparison = true;
+  currentLevel = "comp-class";
+  currentPackage = pkgName;
+  currentClass = null;
+  document.getElementById("backBtn").style.display = "inline-block";
 
-        val method = loader.javaClass.getDeclaredMethod("generateUserTipTotal", TxDbTransaction::class.java)
-        method.isAccessible = true
-        method.invoke(loader, tx1)
-        method.invoke(loader, tx2)
+  const prevMap = oldClassMap();
+  const changed = [];
 
-        val total = report.userTipTotalMap.get(1)
-        Assertions.assertEquals(BigDecimal("5.00"), total)
-    }
+  const classes = classData.filter(c => c.package === pkgName);
+  for (const cur of classes) {
+    const prev = prevMap.get(`${cur.package}||${cur.class}`);
+    if (!prev) continue;
+    const di = Number((cur.inst - prev.inst).toFixed(2));
+    const db = Number((cur.branch - prev.branch).toFixed(2));
+    const da = Number((cur.avg - prev.avg).toFixed(2));
+    if (di === 0 && db === 0 && da === 0) continue;
+    changed.push({
+      class: cur.class,
+      delta_inst: di,
+      delta_branch: db,
+      delta_avg: da,
+      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
+      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
+      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
+    });
+  }
 
-    // ---------------------------------------------------------------------
-    // 6. getBatchReport handles exception gracefully
-    // ---------------------------------------------------------------------
-    @Test
-    fun `getBatchReport handles DAO exception gracefully`() {
-        every { mockDao.getTransactions(any()) } throws RuntimeException("DB failure")
+  // default sort descending by delta_avg
+  if (!sortKey) {
+    changed.sort((a,b) => b.delta_avg - a.delta_avg);
+    currentSort = { key: "delta_avg", asc: false };
+  } else {
+    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
+    changed.sort((a,b) => {
+      const A = a[sortKey], B = b[sortKey];
+      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
+      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
+    });
+  }
 
-        val method = loader.javaClass.getDeclaredMethod("getBatchReport", Long::class.java)
-        method.isAccessible = true
+  const rows = changed.map(r => ({
+    class: r.class,
+    inst: r.inst,
+    branch: r.branch,
+    avg: r.avg,
+    delta_inst: r.delta_inst,
+    delta_branch: r.delta_branch,
+    delta_avg: r.delta_avg
+  }));
 
-        Assertions.assertDoesNotThrow {
-            val report = method.invoke(loader, 1001L) as BatchReport
-            Assertions.assertNotNull(report)
-        }
-    }
+  renderTable([
+    { key: "class", label: "Class" },
+    { key: "inst", label: "Instruction (cur ±Δ)" },
+    { key: "branch", label: "Branch (cur ±Δ)" },
+    { key: "avg", label: "Average (cur ±Δ)" }
+  ], rows, row => renderComparisonMethods(pkgName, row.class));
+}
+
+function renderComparisonMethods(pkgName, className, sortKey = null) {
+  inComparison = true;
+  currentLevel = "comp-method";
+  currentPackage = pkgName;
+  currentClass = className;
+  document.getElementById("backBtn").style.display = "inline-block";
+
+  const prevMap = oldMethodMap();
+  const changed = [];
+
+  const methods = methodData.filter(m => m.package === pkgName && m.class === className);
+  for (const cur of methods) {
+    const prev = prevMap.get(`${cur.package}||${cur.class}||${cur.method}`);
+    if (!prev) continue;
+    const di = Number((cur.inst - prev.inst).toFixed(2));
+    const db = Number((cur.branch - prev.branch).toFixed(2));
+    const da = Number((cur.avg - prev.avg).toFixed(2));
+    if (di === 0 && db === 0 && da === 0) continue;
+    changed.push({
+      method: cur.method,
+      delta_inst: di,
+      delta_branch: db,
+      delta_avg: da,
+      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
+      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
+      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
+    });
+  }
+
+  // default sort descending by delta_avg
+  if (!sortKey) {
+    changed.sort((a,b) => b.delta_avg - a.delta_avg);
+    currentSort = { key: "delta_avg", asc: false };
+  } else {
+    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
+    changed.sort((a,b) => {
+      const A = a[sortKey], B = b[sortKey];
+      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
+      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
+    });
+  }
+
+  const rows = changed.map(r => ({
+    method: r.method,
+    inst: r.inst,
+    branch: r.branch,
+    avg: r.avg,
+    delta_inst: r.delta_inst,
+    delta_branch: r.delta_branch,
+    delta_avg: r.delta_avg
+  }));
+
+  renderTable([
+    { key: "method", label: "Method" },
+    { key: "inst", label: "Instruction (cur ±Δ)" },
+    { key: "branch", label: "Branch (cur ±Δ)" },
+    { key: "avg", label: "Average (cur ±Δ)" }
+  ], rows);
+}
+
+// -------------------------------
+// RENDER SORTED CONTROLLER
+// - detects whether current view is comparison vs dashboard
+// - key provided is the column key from renderTable
+// -------------------------------
+function renderSorted(key) {
+  // When key is a displayed delta cell (we used delta_* internally),
+  // user clicking will toggle asc/desc. We map displayed keys to internal keys:
+  if (inComparison) {
+    // map clicked column keys to internal sort key if needed
+    if (currentLevel === "comp-package") renderComparisonPackages(key);
+    else if (currentLevel === "comp-class") renderComparisonClasses(currentPackage, key);
+    else if (currentLevel === "comp-method") renderComparisonMethods(currentPackage, currentClass, key);
+    else renderComparisonPackages(key);
+  } else {
+    if (currentLevel === "package") renderPackages(key);
+    else if (currentLevel === "class") renderClasses(currentPackage, key);
+    else if (currentLevel === "method") renderMethods(currentClass, key);
+    else renderPackages(key);
+  }
+}
+
+// -------------------------------
+// TAB LOGIC (assumes elements exist)
+// -------------------------------
+document.getElementById("tabDashboard").onclick = () => {
+  document.getElementById("tabDashboard").classList.add("active");
+  document.getElementById("tabCompare").classList.remove("active");
+  // reset current sort for dashboard if you prefer
+  currentSort = { key: null, asc: true };
+  renderPackages();
+};
+
+document.getElementById("tabCompare").onclick = () => {
+  document.getElementById("tabCompare").classList.add("active");
+  document.getElementById("tabDashboard").classList.remove("active");
+  // default comparison landing page: package-level changes
+  currentSort = { key: "delta_avg", asc: false };
+  renderComparisonPackages();
+};
+
+// -------------------------------
+// BACK BUTTON
+// -------------------------------
+document.getElementById("backBtn").onclick = () => {
+  if (inComparison) {
+    if (currentLevel === "comp-method") renderComparisonClasses(currentPackage);
+    else if (currentLevel === "comp-class") renderComparisonPackages();
+    else renderComparisonPackages();
+  } else {
+    if (currentLevel === "method") renderClasses(currentPackage);
+    else if (currentLevel === "class") renderPackages();
+    else renderPackages();
+  }
+};
+
+// -------------------------------
+// SEARCH BOX
+// -------------------------------
+document.getElementById("searchBox").addEventListener("input", () => {
+  // keep current view, just re-render
+  if (inComparison) {
+    if (currentLevel === "comp-package") renderComparisonPackages();
+    else if (currentLevel === "comp-class") renderComparisonClasses(currentPackage);
+    else if (currentLevel === "comp-method") renderComparisonMethods(currentPackage, currentClass);
+    else renderComparisonPackages();
+  } else {
+    if (currentLevel === "package") renderPackages();
+    else if (currentLevel === "class") renderClasses(currentPackage);
+    else if (currentLevel === "method") renderMethods(currentClass);
+    else renderPackages();
+  }
+});
+
+// -------------------------------
+// INIT
+// -------------------------------
+window.onload = () => {
+  loadAllCSVs();
+};
+
+
+
+
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
+  background: #f8f9fa;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.tabs button {
+  padding: 10px 18px;
+  border: none;
+  background: #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: #007bff;
+  color: white;
+}
+
+#searchBox {
+  width: 300px;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+
+#backBtn {
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+table th, table td {
+  padding: 10px;
+  border: 1px solid #ccc;
+  text-align: left;
+}
+
+table tr:hover {
+  background: #f1f1f1;
+  cursor: pointer;
+}
+
+.progress-up {
+  color: green;
+  font-weight: bold;
+}
+
+.progress-down {
+  color: red;
+  font-weight: bold;
 }
 
