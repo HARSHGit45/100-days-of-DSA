@@ -19,34 +19,110 @@ public:
         
     }
 
-};
+};package com.imobile3.pos.data.module.batch.close
 
-
-package com.imobile3.pos.data.module.batch.report
-
-import android.content.Context
-import android.database.Cursor
-import com.imobile3.pos.library.database.transaction.accessObjects.TransactionsDao
+import com.imobile3.pos.app.constants.intdefs.BatchCloseState
 import com.imobile3.pos.library.domainobjects.BatchReport
-import com.imobile3.pos.library.domainobjects.TxDbTender
-import com.imobile3.pos.library.domainobjects.TxDbTransaction
-import com.imobile3.pos.library.webservices.enums.*
-import com.imobile3.pos.library.webservices.transferobjects.BatchDepositDto
-import io.mockk.every
-import io.mockk.just
-import io.mockk.mockk
-import io.mockk.runs
-import org.junit.jupiter.api.*
-import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.Mock
-import org.mockito.junit.jupiter.MockitoExtension
-import java.math.BigDecimal
+import com.imobile3.pos.library.domainobjects.BatchReportDetailed
+import com.imobile3.pos.library.domainobjects.TxDbBatch
+import com.imobile3.pos.library.domainobjects.TxDbBatchTransfer
+import org.junit.Assert.*
+import org.junit.Test
+import org.mockito.Mockito
+import java.util.Date
 
-@ExtendWith(MockitoExtension::class)
-class BatchReportLoaderTest {
+class BatchCloseResponseTest {
 
-    @Mock
-    private lateinit var mockContext: Context
+    @Test
+    fun testDefaultValues() {
+        val response = BatchCloseResponse()
+
+        // Defaults
+        assertEquals(0, response.state)
+        assertNull(response.attemptedDateTime)
+        assertNull(response.batch)
+        assertNull(response.batchReport)
+        assertNull(response.batchReportDetailed)
+        assertNull(response.batchTransfers)
+    }
+
+    @Test
+    fun testStateSetterGetter() {
+        val response = BatchCloseResponse()
+
+        response.state = BatchCloseState.SUCCESS
+        assertEquals(BatchCloseState.SUCCESS, response.state)
+
+        response.state = BatchCloseState.FAILED
+        assertEquals(BatchCloseState.FAILED, response.state)
+    }
+
+    @Test
+    fun testAttemptedDateTimeSetterGetter() {
+        val response = BatchCloseResponse()
+
+        val date = Date()
+        response.attemptedDateTime = date
+        assertEquals(date, response.attemptedDateTime)
+
+        // Set to null to test nullability
+        response.attemptedDateTime = null
+        assertNull(response.attemptedDateTime)
+    }
+
+    @Test
+    fun testBatchSetterGetter() {
+        val response = BatchCloseResponse()
+
+        val batch = Mockito.mock(TxDbBatch::class.java)
+        response.batch = batch
+        assertEquals(batch, response.batch)
+
+        response.batch = null
+        assertNull(response.batch)
+    }
+
+    @Test
+    fun testBatchReportSetterGetter() {
+        val response = BatchCloseResponse()
+
+        val report = Mockito.mock(BatchReport::class.java)
+        response.batchReport = report
+        assertEquals(report, response.batchReport)
+
+        response.batchReport = null
+        assertNull(response.batchReport)
+    }
+
+    @Test
+    fun testBatchReportDetailedSetterGetter() {
+        val response = BatchCloseResponse()
+
+        val detailedReport = Mockito.mock(BatchReportDetailed::class.java)
+        response.batchReportDetailed = detailedReport
+        assertEquals(detailedReport, response.batchReportDetailed)
+
+        response.batchReportDetailed = null
+        assertNull(response.batchReportDetailed)
+    }
+
+    @Test
+    fun testBatchTransfersSetterGetter() {
+        val response = BatchCloseResponse()
+
+        val item1 = Mockito.mock(TxDbBatchTransfer::class.java)
+        val item2 = Mockito.mock(TxDbBatchTransfer::class.java)
+        val list = listOf(item1, item2)
+
+        response.batchTransfers = list
+        assertEquals(2, response.batchTransfers?.size)
+        assertEquals(item1, response.batchTransfers?.get(0))
+        assertEquals(item2, response.batchTransfers?.get(1))
+
+        response.batchTransfers = null
+        assertNull(response.batchTransfers)
+    }
+}
 
     @Mock
     private lateinit var mockDao: TransactionsDao
@@ -234,3 +310,4 @@ class BatchReportLoaderTest {
         }
     }
 }
+
