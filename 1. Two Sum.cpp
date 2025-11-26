@@ -1,3 +1,71 @@
+package com.imobile3.pos.data.module.batch.close
+
+import org.junit.Before
+import org.junit.Test
+import org.mockito.Mockito.*
+
+class BatchCloseTenderCallbacksTest {
+
+    private lateinit var batchCloseManager: BatchCloseManagerApi
+    private lateinit var callbacks: BatchCloseTenderCallbacks
+
+    @Before
+    fun setUp() {
+        batchCloseManager = mock(BatchCloseManagerApi::class.java)
+        callbacks = BatchCloseTenderCallbacks(batchCloseManager)
+    }
+
+    @Test
+    fun `ActionInProgress should call onTenderActionsSuccess`() {
+        callbacks.ActionInProgress(1, 10)
+        verify(batchCloseManager).onTenderActionsSuccess()
+    }
+
+    @Test
+    fun `ActionOnComplete should call onTenderActionsSuccess`() {
+        callbacks.ActionOnComplete(10, 10)
+        verify(batchCloseManager).onTenderActionsSuccess()
+    }
+
+    @Test
+    fun `ActionOnCancelled should call onFailure`() {
+        callbacks.ActionOnCancelled()
+        verify(batchCloseManager).onFailure("ActionOnCancelled")
+    }
+
+    @Test
+    fun `ActionOnBusy should call onFailure`() {
+        callbacks.ActionOnBusy()
+        verify(batchCloseManager).onFailure("ActionOnBusy")
+    }
+
+    @Test
+    fun `ActionOnBatchNotOpen should call onTenderActionsSuccess`() {
+        callbacks.ActionOnBatchNotOpen()
+        verify(batchCloseManager).onTenderActionsSuccess()
+    }
+
+    @Test
+    fun `ActionOnNoActionableTenders should call onTenderActionsSuccess`() {
+        callbacks.ActionOnNoActionableTenders()
+        verify(batchCloseManager).onTenderActionsSuccess()
+    }
+
+    @Test
+    fun `ActionOnConnectionError should call onFailure`() {
+        callbacks.ActionOnConnectionError()
+        verify(batchCloseManager).onFailure("ActionOnConnectionError")
+    }
+
+    @Test
+    fun `ActionOnError should call onFailure`() {
+        callbacks.ActionOnError()
+        verify(batchCloseManager).onFailure("ActionOnError")
+    }
+}
+
+
+
 class Solution {
 public:
     vector<int> twoSum(vector<int>& nums, int target) {
@@ -685,4 +753,5 @@ table tr:hover {
   color: red;
   font-weight: bold;
 }
+
 
