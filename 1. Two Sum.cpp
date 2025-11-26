@@ -1,68 +1,91 @@
-package com.imobile3.pos.data.module.batch.close
-
+import com.imobile3.pos.data.module.batch.close.BatchCloseManagerApi
+import com.imobile3.pos.data.module.batch.close.BatchCloseTerminalBatchCloseCallbacks
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.mockito.Mock
 import org.mockito.Mockito.*
+import org.mockito.junit.MockitoJUnitRunner
 
-class BatchCloseTenderCallbacksTest {
+@RunWith(MockitoJUnitRunner::class)
+class BatchCloseTerminalBatchCloseCallbacksTest {
 
-    private lateinit var batchCloseManager: BatchCloseManagerApi
-    private lateinit var callbacks: BatchCloseTenderCallbacks
+    @Mock
+    lateinit var batchCloseManagerApi: BatchCloseManagerApi
+
+    private lateinit var callbacks: BatchCloseTerminalBatchCloseCallbacks
 
     @Before
-    fun setUp() {
-        batchCloseManager = mock(BatchCloseManagerApi::class.java)
-        callbacks = BatchCloseTenderCallbacks(batchCloseManager)
+    fun setup() {
+        callbacks = BatchCloseTerminalBatchCloseCallbacks(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionInProgress should call onTenderActionsSuccess`() {
-        callbacks.ActionInProgress(1, 10)
-        verify(batchCloseManager).onTenderActionsSuccess()
+    fun `test TerminalBatchCloseOnSafUploadInProgress does nothing`() {
+        callbacks.TerminalBatchCloseOnSafUploadInProgress(1, 10)
+        verifyNoInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnComplete should call onTenderActionsSuccess`() {
-        callbacks.ActionOnComplete(10, 10)
-        verify(batchCloseManager).onTenderActionsSuccess()
+    fun `test TerminalBatchCloseOnSafUploadComplete does nothing`() {
+        callbacks.TerminalBatchCloseOnSafUploadComplete(5, 20)
+        verifyNoInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnCancelled should call onFailure`() {
-        callbacks.ActionOnCancelled()
-        verify(batchCloseManager).onFailure("ActionOnCancelled")
+    fun `test TerminalBatchCloseOnSafTendersNotFound does nothing`() {
+        callbacks.TerminalBatchCloseOnSafTendersNotFound()
+        verifyNoInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnBusy should call onFailure`() {
-        callbacks.ActionOnBusy()
-        verify(batchCloseManager).onFailure("ActionOnBusy")
+    fun `test TerminalBatchCloseOnInProgress does nothing`() {
+        callbacks.TerminalBatchCloseOnInProgress()
+        verifyNoInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnBatchNotOpen should call onTenderActionsSuccess`() {
-        callbacks.ActionOnBatchNotOpen()
-        verify(batchCloseManager).onTenderActionsSuccess()
+    fun `test TerminalBatchCloseOnComplete calls success`() {
+        callbacks.TerminalBatchCloseOnComplete()
+
+        verify(batchCloseManagerApi).onTerminalBatchCloseSuccess()
+        verifyNoMoreInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnNoActionableTenders should call onTenderActionsSuccess`() {
-        callbacks.ActionOnNoActionableTenders()
-        verify(batchCloseManager).onTenderActionsSuccess()
+    fun `test TerminalBatchCloseOnCancelled calls failure`() {
+        callbacks.TerminalBatchCloseOnCancelled()
+
+        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnCancelled")
+        verifyNoMoreInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnConnectionError should call onFailure`() {
-        callbacks.ActionOnConnectionError()
-        verify(batchCloseManager).onFailure("ActionOnConnectionError")
+    fun `test TerminalBatchCloseOnBusy calls failure`() {
+        callbacks.TerminalBatchCloseOnBusy()
+
+        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnBusy")
+        verifyNoMoreInteractions(batchCloseManagerApi)
     }
 
     @Test
-    fun `ActionOnError should call onFailure`() {
-        callbacks.ActionOnError()
-        verify(batchCloseManager).onFailure("ActionOnError")
+    fun `test TerminalBatchCloseOnTerminalConfigurationError calls failure with message`() {
+        callbacks.TerminalBatchCloseOnTerminalConfigurationError("Config issue")
+
+        verify(batchCloseManagerApi)
+            .onFailure("TerminalBatchCloseOnTerminalConfigurationError: Config issue")
+        verifyNoMoreInteractions(batchCloseManagerApi)
+    }
+
+    @Test
+    fun `test TerminalBatchCloseOnError calls failure`() {
+        callbacks.TerminalBatchCloseOnError()
+
+        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnError")
+        verifyNoMoreInteractions(batchCloseManagerApi)
     }
 }
+
 
 
 
@@ -753,5 +776,6 @@ table tr:hover {
   color: red;
   font-weight: bold;
 }
+
 
 
