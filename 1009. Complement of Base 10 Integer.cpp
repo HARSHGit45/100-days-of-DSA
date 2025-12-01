@@ -31,6 +31,16 @@ if(n==0)
 };
 
 
+from datetime import datetime
+
+release_date = datetime.today().strftime("%Y%m%d")  # e.g., 20251201
+release_version = "v1.3.0"
+branch_name = "main"
+
+out_file = f"coverage_dashboard/releases/{release_date}_{release_version}_{branch_name}.csv"
+
+
+
 
 import xml.etree.ElementTree as ET
 import csv
@@ -193,3 +203,4 @@ if __name__ == "__main__":
     root = tree.getroot()
 
     generate_unified_csv(root)
+
