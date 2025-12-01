@@ -35,20 +35,6 @@ import csv
 import os
 from datetime import datetime
 
-# ===================== CONFIG =====================
-xml_file = 'app/build/reports/jacoco/jacocoTsysUnitedStatesDebugCoverage/jacocoTsysUnitedStatesDebugCoverage.xml'
-
-# USER INPUT → RELEASE COLUMN FORMAT
-version = "1.0.0"        # Example: '1.0.0'
-branch = "develop"       # Example: 'develop'
-date_str = datetime.today().strftime("%Y-%m-%d")
-
-RELEASE_ID = f"{date_str}_v{version}_{branch}"
-
-# Output file
-output_dir = "coverage_dashboard"
-os.makedirs(output_dir, exist_ok=True)
-MASTER_CSV = os.path.join(output_dir, f"{RELEASE_ID}.csv")
 
 # ===================== Helpers =====================
 
@@ -64,35 +50,31 @@ def get_status(avg_coverage):
     else:
         return "Excellent", "Low"
 
+
 def safe_pct(covered, missed):
     total = covered + missed
-    return round((covered / total) * 100, 2) if total else 0, total
+    return (covered / total) * 100 if total else 0
 
-def format_pct(value):
-    """Add % symbol for output"""
-    return f"{value}%"
 
-# ===================== MASTER CSV GENERATOR =====================
+# ===================== MAIN CSV GENERATOR =====================
 
-def generate_master_csv(root, out_file=MASTER_CSV):
+def generate_unified_csv(root, release_name, out_dir="coverage_dashboard"):
+    os.makedirs(out_dir, exist_ok=True)
+
+    out_file = os.path.join(out_dir, f"{release_name}.csv")
+
     with open(out_file, "w", newline="") as f:
         writer = csv.writer(f)
 
-        # Header
-        writer.writerow([
-            "Release", "Level", "Package", "Class", 
-            "Total Classes", "Total Methods", "Total Lines", 
-            "Covered Lines", "Missed Lines", "Covered Branches", "Missed Branches",
-            "Instruction Coverage (%)", "Branch Coverage (%)", "Average Coverage (%)",
-            "Status", "Priority"
-        ])
+        # ===================== SUMMARY =====================
+        writer.writerow(["SECTION", "Metric", "Value"])
 
-        # 1️⃣ Summary row
         total_line_cov = total_line_missed = 0
         total_branch_cov = total_branch_missed = 0
 
         for counter in root.findall("counter"):
-            ctype, covered, missed = counter.get("type"), int(counter.get("covered")), int(counter.get("missed"))
+            ctype = counter.get("type")
+            covered, missed = int(counter.get("covered")), int(counter.get("missed"))
             if ctype == "LINE":
                 total_line_cov += covered
                 total_line_missed += missed
@@ -100,95 +82,136 @@ def generate_master_csv(root, out_file=MASTER_CSV):
                 total_branch_cov += covered
                 total_branch_missed += missed
 
-        total_elements = total_line_cov + total_line_missed
-        total_cov_pct = round((total_line_cov / total_elements) * 100, 2) if total_elements else 0
-        status, priority = get_status(total_cov_pct)
+        coverage_pct = safe_pct(total_line_cov, total_line_missed)
+        status, priority = get_status(coverage_pct)
+
+        writer.writerow(["SUMMARY", "Covered Lines", total_line_cov])
+        writer.writerow(["SUMMARY", "Missed Lines", total_line_missed])
+        writer.writerow(["SUMMARY", "Covered Branches", total_branch_cov])
+        writer.writerow(["SUMMARY", "Missed Branches", total_branch_missed])
+        writer.writerow(["SUMMARY", "Total Coverage (%)", f"{coverage_pct:.2f}%"])
+        writer.writerow(["SUMMARY", "Status", status])
+        writer.writerow(["SUMMARY", "Priority", priority])
+
+        writer.writerow([])
+
+        # ===================== PACKAGE LEVEL =====================
 
         writer.writerow([
-            RELEASE_ID, "summary", "", "",
-            "", "", "",
-            total_line_cov, total_line_missed, total_branch_cov, total_branch_missed,
-            format_pct(total_cov_pct), format_pct(total_cov_pct), format_pct(total_cov_pct),
-            status, priority
+            "SECTION", "Package", "Total Classes", "Total Methods", "Total Lines",
+            "Instruction Coverage (%)", "Branch Coverage (%)",
+            "Average Coverage (%)", "Status", "Priority"
         ])
 
-        # 2️⃣ Package and Class rows
         for package in root.findall("package"):
             pkg_name = package.get("name")
 
-            # Package-level aggregation
-            class_count = 0
-            method_count = 0
-            line_total = 0
-            instr_cov = instr_total = 0
-            branch_cov = branch_total = 0
+            class_count = len(package.findall("class"))
+            total_methods = 0
+            instr_cov = instr_total = branch_cov = branch_total = lines = 0
 
             for cls in package.findall("class"):
-                class_name = cls.get("name").split("/")[-1]
-                # Skip inner / anonymous classes
-                if "$" in class_name:
-                    continue
-
-                class_count += 1
-                method_count += len(cls.findall("method"))
-
-                # Count per class
-                class_instr_cov = class_instr_total = 0
-                class_branch_cov = class_branch_total = 0
-                class_lines = 0
-
                 for counter in cls.findall("counter"):
-                    ctype, covered, missed = counter.get("type"), int(counter.get("covered")), int(counter.get("missed"))
+                    ctype = counter.get("type")
+                    covered, missed = int(counter.get("covered")), int(counter.get("missed"))
+
                     if ctype == "INSTRUCTION":
-                        class_instr_cov += covered
-                        class_instr_total += covered + missed
+                        instr_cov += covered
+                        instr_total += covered + missed
                     elif ctype == "BRANCH":
-                        class_branch_cov += covered
-                        class_branch_total += covered + missed
+                        branch_cov += covered
+                        branch_total += covered + missed
                     elif ctype == "LINE":
-                        class_lines += covered + missed
+                        lines += covered + missed
 
-                instr_cov += class_instr_cov
-                instr_total += class_instr_total
-                branch_cov += class_branch_cov
-                branch_total += class_branch_cov + (class_branch_total - class_branch_cov)
-                line_total += class_lines
+                total_methods += len(cls.findall("method"))
 
-                # Class-level percentages
-                instr_pct, _ = safe_pct(class_instr_cov, class_instr_total - class_instr_cov)
-                branch_pct, _ = safe_pct(class_branch_cov, class_branch_total - class_branch_cov)
-                avg_pct = round((instr_pct + branch_pct) / 2, 2)
-                status, priority = get_status(avg_pct)
+            instr_pct = safe_pct(instr_cov, instr_total - instr_cov)
+            branch_pct = safe_pct(branch_cov, branch_total - branch_cov)
+            avg_pct = (instr_pct + branch_pct) / 2
+            status, priority = get_status(avg_pct)
 
-                # Write class row
-                writer.writerow([
-                    RELEASE_ID, "class", pkg_name, class_name,
-                    "", len(cls.findall("method")), class_lines,
-                    "", "", "", "",
-                    format_pct(instr_pct), format_pct(branch_pct), format_pct(avg_pct),
-                    status, priority
-                ])
-
-            # Package-level percentages
-            pkg_instr_pct, _ = safe_pct(instr_cov, instr_total - instr_cov)
-            pkg_branch_pct, _ = safe_pct(branch_cov, branch_total - branch_cov)
-            pkg_avg_pct = round((pkg_instr_pct + pkg_branch_pct) / 2, 2)
-            status, priority = get_status(pkg_avg_pct)
-
-            # Write package row
             writer.writerow([
-                RELEASE_ID, "package", pkg_name, "",
-                class_count, method_count, line_total,
-                "", "", "", "",
-                format_pct(pkg_instr_pct), format_pct(pkg_branch_pct), format_pct(pkg_avg_pct),
-                status, priority
+                "PACKAGE", pkg_name, class_count, total_methods, lines,
+                f"{instr_pct:.2f}%", f"{branch_pct:.2f}%",
+                f"{avg_pct:.2f}%", status, priority
             ])
 
-    print(f"✅ Master CSV generated: {out_file}")
+        writer.writerow([])
 
-# ===================== Run Script =====================
+        # ===================== CLASS LEVEL (AGGREGATED) =====================
+
+        writer.writerow([
+            "SECTION", "Package", "Class", "Total Methods", "Total Lines",
+            "Instruction Coverage (%)", "Branch Coverage (%)",
+            "Average Coverage (%)", "Status", "Priority"
+        ])
+
+        for package in root.findall("package"):
+            pkg_name = package.get("name")
+
+            parent_classes = {}
+
+            for cls in package.findall("class"):
+                raw = cls.get("name")
+                if not raw:
+                    continue
+
+                short = raw.split("/")[-1]
+
+                parent = short.split("$")[0]
+
+                d = parent_classes.setdefault(parent, {
+                    "methods": 0,
+                    "instr_cov": 0,
+                    "instr_total": 0,
+                    "branch_cov": 0,
+                    "branch_total": 0,
+                    "lines": 0
+                })
+
+                d["methods"] += len(cls.findall("method"))
+
+                for counter in cls.findall("counter"):
+                    ctype = counter.get("type")
+                    covered, missed = int(counter.get("covered")), int(counter.get("missed"))
+
+                    if ctype == "INSTRUCTION":
+                        d["instr_cov"] += covered
+                        d["instr_total"] += covered + missed
+                    elif ctype == "BRANCH":
+                        d["branch_cov"] += covered
+                        d["branch_total"] += covered + missed
+                    elif ctype == "LINE":
+                        d["lines"] += covered + missed
+
+            for class_name, d in parent_classes.items():
+                instr_pct = safe_pct(d["instr_cov"], d["instr_total"] - d["instr_cov"])
+                branch_pct = safe_pct(d["branch_cov"], d["branch_total"] - d["branch_cov"])
+                avg_pct = (instr_pct + branch_pct) / 2
+                status, priority = get_status(avg_pct)
+
+                writer.writerow([
+                    "CLASS", pkg_name, class_name, d["methods"], d["lines"],
+                    f"{instr_pct:.2f}%", f"{branch_pct:.2f}%",
+                    f"{avg_pct:.2f}%", status, priority
+                ])
+
+    print(f"✅ Unified CSV created: {out_file}")
+
+
+# ===================== MAIN =====================
 
 if __name__ == "__main__":
+    xml_file = 'app/build/reports/jacoco/jacocoTsysUnitedStatesDebugCoverage/jacocoTsysUnitedStatesDebugCoverage.xml'
+
     tree = ET.parse(xml_file)
     root = tree.getroot()
-    generate_master_csv(root)
+
+    # Example release name:
+    # 2025-01-22_v1.4.0_develop
+    release_name = datetime.now().strftime("%Y-%m-%d") + "_v1.4.0_develop"
+
+    generate_unified_csv(root, release_name)
+
+
