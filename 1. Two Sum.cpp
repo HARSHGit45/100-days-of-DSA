@@ -1,713 +1,384 @@
-import com.imobile3.pos.data.module.batch.close.BatchCloseManagerApi
-import com.imobile3.pos.data.module.batch.close.BatchCloseTerminalBatchCloseCallbacks
+
+package com.imobile3.pos.data.module.batch.report
+
+import android.database.Cursor
+import android.util.SparseArray
+import com.imobile3.pos.data.module.batch.BatchManager
+import com.imobile3.pos.data.module.order.cart.tender.TenderManager
+import com.imobile3.pos.data.module.order.cart.transaction.TransactionRepository
+import com.imobile3.pos.library.constants.enums.CvmResult
+import com.imobile3.pos.library.domainobjects.*
+import com.imobile3.pos.library.webservices.enums.*
+import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.mockito.Mock
-import org.mockito.Mockito.*
-import org.mockito.junit.MockitoJUnitRunner
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mockito
+import org.mockito.kotlin.whenever
+import java.lang.reflect.Method
+import java.math.BigDecimal
 
-@RunWith(MockitoJUnitRunner::class)
-class BatchCloseTerminalBatchCloseCallbacksTest {
+class GetBatchSummaryListWithReportsUseCaseTest {
 
-    @Mock
-    lateinit var batchCloseManagerApi: BatchCloseManagerApi
-
-    private lateinit var callbacks: BatchCloseTerminalBatchCloseCallbacks
+    private lateinit var transactionRepository: TransactionRepository
+    private lateinit var batchManager: BatchManager
+    private lateinit var tenderManager: TenderManager
+    private lateinit var useCase: GetBatchSummaryListWithReportsUseCase
 
     @Before
     fun setup() {
-        callbacks = BatchCloseTerminalBatchCloseCallbacks(batchCloseManagerApi)
+        transactionRepository = Mockito.mock(TransactionRepository::class.java)
+        batchManager = Mockito.mock(BatchManager::class.java)
+        tenderManager = Mockito.mock(TenderManager::class.java)
+        useCase = GetBatchSummaryListWithReportsUseCase(
+            transactionRepository,
+            batchManager,
+            tenderManager
+        )
     }
 
+    // ---------------------------
+    // removeZeroTotalDeposits()
+    // ---------------------------
     @Test
-    fun `test TerminalBatchCloseOnSafUploadInProgress does nothing`() {
-        callbacks.TerminalBatchCloseOnSafUploadInProgress(1, 10)
-        verifyNoInteractions(batchCloseManagerApi)
-    }
+    fun `removeZeroTotalDeposits removes zero total deposits`() {
+        val method: Method = GetBatchSummaryListWithReportsUseCase::class.java
+            .getDeclaredMethod("removeZeroTotalDeposits", BatchReport::class.java)
+        method.isAccessible = true
 
-    @Test
-    fun `test TerminalBatchCloseOnSafUploadComplete does nothing`() {
-        callbacks.TerminalBatchCloseOnSafUploadComplete(5, 20)
-        verifyNoInteractions(batchCloseManagerApi)
-    }
+        val report = BatchReport()
 
-    @Test
-    fun `test TerminalBatchCloseOnSafTendersNotFound does nothing`() {
-        callbacks.TerminalBatchCloseOnSafTendersNotFound()
-        verifyNoInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnInProgress does nothing`() {
-        callbacks.TerminalBatchCloseOnInProgress()
-        verifyNoInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnComplete calls success`() {
-        callbacks.TerminalBatchCloseOnComplete()
-
-        verify(batchCloseManagerApi).onTerminalBatchCloseSuccess()
-        verifyNoMoreInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnCancelled calls failure`() {
-        callbacks.TerminalBatchCloseOnCancelled()
-
-        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnCancelled")
-        verifyNoMoreInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnBusy calls failure`() {
-        callbacks.TerminalBatchCloseOnBusy()
-
-        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnBusy")
-        verifyNoMoreInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnTerminalConfigurationError calls failure with message`() {
-        callbacks.TerminalBatchCloseOnTerminalConfigurationError("Config issue")
-
-        verify(batchCloseManagerApi)
-            .onFailure("TerminalBatchCloseOnTerminalConfigurationError: Config issue")
-        verifyNoMoreInteractions(batchCloseManagerApi)
-    }
-
-    @Test
-    fun `test TerminalBatchCloseOnError calls failure`() {
-        callbacks.TerminalBatchCloseOnError()
-
-        verify(batchCloseManagerApi).onFailure("TerminalBatchCloseOnError")
-        verifyNoMoreInteractions(batchCloseManagerApi)
-    }
-}
-
-
-
-
-class Solution {
-public:
-    vector<int> twoSum(vector<int>& nums, int target) {
-        int n=nums.size();
-
-
-        for(int i=0;i<n;i++)
-        {
-            for(int j=i+1;j<n;j++)
-            {
-                if(nums[i]+nums[j]==target)
-                {
-                    return {i,j};
-                }
-            }
+        val zero = BatchDepositDto().apply {
+            paymentType = PaymentType.Cash
+            totalAmount = BigDecimal.ZERO
+        }
+        val nonZero = BatchDepositDto().apply {
+            paymentType = PaymentType.Cash
+            totalAmount = BigDecimal("12.34")
         }
 
-        return {};
-        
+        report.addDeposit(zero)
+        report.addDeposit(nonZero)
+
+        // pre-check
+        assertEquals(2, report.deposits.size)
+
+        method.invoke(useCase, report)
+
+        // only non-zero remains
+        assertEquals(1, report.deposits.size)
+        assertEquals(BigDecimal("12.34"), report.deposits[0].totalAmount)
     }
 
-}<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Coverage Dashboard</title>
-    <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-    <div class="tabs">
-        <button id="tabDashboard" class="active">Dashboard</button>
-        <button id="tabCompare">Compare Releases</button>
-    </div>
+    // ---------------------------
+    // shouldUpdateTenderCount()
+    // ---------------------------
+    @Test
+    fun `shouldUpdateTenderCount returns true for valid credit card authorized with cvm not pin`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "shouldUpdateTenderCount",
+            TenderType::class.java,
+            TenderStatusType::class.java,
+            TxDbTender::class.java
+        )
+        method.isAccessible = true
 
-    <input type="text" id="searchBox" placeholder="Search packages/classes/methods..." />
+        val tender = Mockito.mock(TxDbTender::class.java)
+        whenever(tender.paymentType).thenReturn(PaymentType.CreditCard)
+        whenever(tender.tenderCreditStatusType).thenReturn(TenderCreditStatusType.Authorized)
+        whenever(tender.cvmResult).thenReturn(CvmResult.Signature)
 
-    <button id="backBtn" style="display:none">⬅ Back</button>
+        val res = method.invoke(
+            useCase,
+            TenderType.Normal,
+            TenderStatusType.Completed,
+            tender
+        ) as Boolean
 
-    <table id="dataTable"></table>
-
-    <script src="script.js"></script>
-</body>
-</html>
-
-
-// -------------------------------
-// FULL script.js - Dashboard + Full Comparison (Option B)
-// -------------------------------
-
-// GLOBAL STATE
-let packageData = [];
-let classData = [];
-let methodData = [];
-
-let oldPackageData = [];
-let oldClassData = [];
-let oldMethodData = [];
-
-let currentLevel = "package"; // 'package'|'class'|'method'|'comp-package'|'comp-class'|'comp-method'
-let currentPackage = null;
-let currentClass = null;
-
-let currentSort = { key: null, asc: true }; // used across views
-let inComparison = false;
-
-// Utility: safe parse to number (returns NaN if not numeric)
-function toNum(v) {
-  if (v === null || v === undefined || v === "") return NaN;
-  // parseFloat handles decimals; trim first
-  return parseFloat(String(v).trim());
-}
-
-// -------------------------------
-// CSV LOADING (simple split-by-comma loader)
-// - Assumes first row is header
-// - Returns array of objects keyed by header
-// -------------------------------
-async function fetchText(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
-  return await res.text();
-}
-
-function parseCSVText(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
-  if (lines.length === 0) return [];
-  const headers = lines[0].split(",").map(h => h.trim());
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map(c => c.trim());
-    const obj = {};
-    for (let j = 0; j < headers.length; j++) obj[headers[j]] = cols[j] ?? "";
-    rows.push(obj);
-  }
-  return rows;
-}
-
-async function loadAllCSVs() {
-  try {
-    const [
-      pkgTxt, clsTxt, metTxt,
-      oldPkgTxt, oldClsTxt, oldMetTxt
-    ] = await Promise.all([
-      fetchText("package_report.csv"),
-      fetchText("class_report.csv"),
-      fetchText("method_report.csv"),
-      fetchText("package_report.csv"),
-      fetchText("class_report.csv"),
-      fetchText("method_report.csv")
-    ]);
-
-    const pkgRows = parseCSVText(pkgTxt);
-    const clsRows = parseCSVText(clsTxt);
-    const metRows = parseCSVText(metTxt);
-
-    const oldPkgRows = parseCSVText(oldPkgTxt);
-    const oldClsRows = parseCSVText(oldClsTxt);
-    const oldMetRows = parseCSVText(oldMetTxt);
-
-    // Normalize current data into simpler keys we use
-    packageData = pkgRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      classes: toNum(r["Total Classes"] ?? r["Classes"] ?? r["total_classes"] ?? ""),
-      methods: toNum(r["Total Methods"] ?? r["methods"] ?? ""),
-      lines: toNum(r["Total Lines"] ?? r["Lines"] ?? ""),
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
-      status: r["Status"] ?? ""
-    }));
-
-    classData = clsRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      class: r["Class"] ?? r["class"] ?? "",
-      methods: toNum(r["Total Methods"] ?? r["methods"] ?? ""),
-      lines: toNum(r["Total Lines"] ?? r["Lines"] ?? ""),
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
-      status: r["Status"] ?? ""
-    }));
-
-    methodData = metRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      class: r["Class"] ?? r["class"] ?? "",
-      method: r["Method"] ?? r["method"] ?? "",
-      line: r["Line Number"] ?? r["Line"] ?? r["line"] ?? "",
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? ""),
-      status: r["Status"] ?? ""
-    }));
-
-    // Old data
-    oldPackageData = oldPkgRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
-    }));
-
-    oldClassData = oldClsRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      class: r["Class"] ?? r["class"] ?? "",
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
-    }));
-
-    oldMethodData = oldMetRows.map(r => ({
-      package: r["Package"] ?? r["package"] ?? "",
-      class: r["Class"] ?? r["class"] ?? "",
-      method: r["Method"] ?? r["method"] ?? "",
-      inst: toNum(r["Instruction Coverage (%)"] ?? r["Instruction %"] ?? r["inst"] ?? ""),
-      branch: toNum(r["Branch Coverage (%)"] ?? r["Branch %"] ?? r["branch"] ?? r["branch"] ?? ""),
-      avg: toNum(r["Average Coverage (%)"] ?? r["Average %"] ?? r["avg"] ?? "")
-    }));
-
-    // initial render
-    renderPackages();
-  } catch (err) {
-    console.error(err);
-    alert("Failed to load CSVs. Check console for errors.");
-  }
-}
-
-// -------------------------------
-// SEARCH FILTER
-// -------------------------------
-function applySearchFilter(data) {
-  const qEl = document.getElementById("searchBox");
-  const q = qEl ? String(qEl.value || "").toLowerCase().trim() : "";
-  if (!q) return data;
-  return data.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(q)));
-}
-
-// -------------------------------
-// SORTING (numeric-aware)
-// - sortData mutates array (like Array.sort) and returns it
-// -------------------------------
-function sortData(data, key, asc = true) {
-  return data.sort((a, b) => {
-    const A = a[key];
-    const B = b[key];
-    const nA = toNum(A);
-    const nB = toNum(B);
-    if (!isNaN(nA) && !isNaN(nB)) return asc ? nA - nB : nB - nA;
-    const sA = String(A ?? "").toLowerCase();
-    const sB = String(B ?? "").toLowerCase();
-    return asc ? sA.localeCompare(sB) : sB.localeCompare(sA);
-  });
-}
-
-// -------------------------------
-// RENDER TABLE (generic)
-// -------------------------------
-function renderTable(columns, rows, clickHandler = null) {
-  const table = document.getElementById("dataTable");
-  if (!table) {
-    console.error("dataTable element not found");
-    return;
-  }
-  table.innerHTML = "";
-
-  const thead = document.createElement("thead");
-  const tr = document.createElement("tr");
-  for (const col of columns) {
-    const th = document.createElement("th");
-    th.textContent = col.label;
-    th.style.cursor = "pointer";
-    th.onclick = () => {
-      // Special handling: when in comparison views default sort is descending by delta if key starts with 'delta'
-      if (inComparison && col.key.startsWith("delta_") && currentSort.key !== col.key) {
-        currentSort = { key: col.key, asc: false }; // default DESC for delta
-      } else if (currentSort.key === col.key) {
-        currentSort.asc = !currentSort.asc;
-      } else {
-        currentSort = { key: col.key, asc: true };
-      }
-      // Apply sort on visible rows (re-render via current view)
-      renderSorted(col.key);
-    };
-    tr.appendChild(th);
-  }
-  thead.appendChild(tr);
-  table.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-  for (const row of rows) {
-    const trRow = document.createElement("tr");
-    if (clickHandler) trRow.onclick = () => clickHandler(row);
-    for (const col of columns) {
-      const td = document.createElement("td");
-      // allow HTML in cell if user provided (like colored spans)
-      td.innerHTML = row[col.key] === undefined ? "" : row[col.key];
-      trRow.appendChild(td);
+        assertTrue(res)
     }
-    tbody.appendChild(trRow);
-  }
-  table.appendChild(tbody);
+
+    @Test
+    fun `shouldUpdateTenderCount returns false for non-credit payment`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "shouldUpdateTenderCount",
+            TenderType::class.java,
+            TenderStatusType::class.java,
+            TxDbTender::class.java
+        )
+        method.isAccessible = true
+
+        val tender = Mockito.mock(TxDbTender::class.java)
+        whenever(tender.paymentType).thenReturn(PaymentType.Cash)
+
+        val res = method.invoke(
+            useCase,
+            TenderType.Normal,
+            TenderStatusType.Completed,
+            tender
+        ) as Boolean
+
+        assertFalse(res)
+    }
+
+    // ---------------------------
+    // getCustomTenderDeposits()
+    // ---------------------------
+    @Test
+    fun `getCustomTenderDeposits adds new custom deposit when none exists`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "getCustomTenderDeposits",
+            BatchReport::class.java,
+            TxDbTender::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val report = BatchReport()
+
+        val tender = Mockito.mock(TxDbTender::class.java)
+        whenever(tender.paymentType).thenReturn(PaymentType.CustomTender)
+        whenever(tender.orderAmount).thenReturn(BigDecimal("5.00"))
+        whenever(tender.tipAmount).thenReturn(BigDecimal("1.00"))
+        whenever(tender.changeAmount).thenReturn(BigDecimal.ZERO)
+        whenever(tender.totalAmount).thenReturn(BigDecimal("6.00"))
+        whenever(tender.amountReceived).thenReturn(BigDecimal("6.00"))
+
+        val fields = Mockito.mock(CustomTenderFieldsDto::class.java)
+        whenever(fields.customTenderId).thenReturn("CT-101")
+        whenever(tender.customFields).thenReturn(fields)
+
+        // simulate no matching existing deposit
+        whenever(batchManager.getCustomTenderFieldsDto(any())).thenReturn(null)
+
+        method.invoke(useCase, report, tender, "tag")
+
+        assertEquals(1, report.deposits.size)
+        val added = report.deposits[0]
+        assertEquals(PaymentType.CustomTender, added.paymentType)
+        assertEquals(BigDecimal("5.00"), added.orderAmount)
+        assertEquals(BigDecimal("1.00"), added.tipAmount)
+        assertEquals(BigDecimal("6.00"), added.totalAmount)
+        assertEquals(BigDecimal("6.00"), added.amountReceived)
+        // custom fields json should be set (string) - toJson implementation unknown; just ensure not null when set by code
+        assertNotNull(added.customTenderFields)
+    }
+
+    @Test
+    fun `getCustomTenderDeposits merges into existing deposit when customTenderId matches`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "getCustomTenderDeposits",
+            BatchReport::class.java,
+            TxDbTender::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val report = BatchReport()
+
+        // create existing deposit with custom id CT-201
+        val existing = BatchDepositDto().apply {
+            paymentType = PaymentType.CustomTender
+            orderAmount = BigDecimal("3.00")
+            tipAmount = BigDecimal("0.50")
+            changeAmount = BigDecimal.ZERO
+            totalAmount = BigDecimal("3.50")
+            amountReceived = BigDecimal("3.50")
+        }
+        report.addDeposit(existing)
+
+        val existingFields = CustomTenderFieldsDto().apply { customTenderId = "CT-201" }
+        whenever(batchManager.getCustomTenderFieldsDto(existing)).thenReturn(existingFields)
+
+        val tender = Mockito.mock(TxDbTender::class.java)
+        whenever(tender.paymentType).thenReturn(PaymentType.CustomTender)
+        whenever(tender.orderAmount).thenReturn(BigDecimal("2.00"))
+        whenever(tender.tipAmount).thenReturn(BigDecimal("0.25"))
+        whenever(tender.changeAmount).thenReturn(BigDecimal.ZERO)
+        whenever(tender.totalAmount).thenReturn(BigDecimal("2.25"))
+        whenever(tender.amountReceived).thenReturn(BigDecimal("2.25"))
+        whenever(tender.customFields).thenReturn(existingFields)
+
+        method.invoke(useCase, report, tender, "tag")
+
+        // deposit should be merged: orderAmount 3 + 2 = 5, tip 0.5 + 0.25 = 0.75, total 3.5 + 2.25 = 5.75
+        assertEquals(1, report.deposits.size)
+        val merged = report.deposits[0]
+        assertEquals(BigDecimal("5.00"), merged.orderAmount)
+        assertEquals(BigDecimal("0.75"), merged.tipAmount)
+        assertEquals(BigDecimal("5.75"), merged.totalAmount)
+    }
+
+    // ---------------------------
+    // generateUserTipTotal()
+    // ---------------------------
+    @Test
+    fun `generateUserTipTotal creates and accumulates per-user tip totals`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "generateUserTipTotal",
+            TxDbTransaction::class.java,
+            BatchReport::class.java
+        )
+        method.isAccessible = true
+
+        val report = BatchReport()
+
+        val tx1 = Mockito.mock(TxDbTransaction::class.java)
+        whenever(tx1.userId).thenReturn(77)
+        whenever(tx1.totalTips).thenReturn(BigDecimal("2.50"))
+
+        method.invoke(useCase, tx1, report)
+        assertEquals(1, report.userTipTotalMap.size())
+        assertEquals(BigDecimal("2.50"), report.userTipTotalMap[77])
+
+        val tx2 = Mockito.mock(TxDbTransaction::class.java)
+        whenever(tx2.userId).thenReturn(77)
+        whenever(tx2.totalTips).thenReturn(BigDecimal("1.25"))
+
+        method.invoke(useCase, tx2, report)
+        assertEquals(1, report.userTipTotalMap.size())
+        assertEquals(BigDecimal("3.75"), report.userTipTotalMap[77])
+    }
+
+    // ---------------------------
+    // generateDeposits() - exercise all branch filters:
+    //  - invalid tender status (skip)
+    //  - non-auth & cancelled (skip)
+    //  - non-auth & voided (skip)
+    //  - failedToVoid (skip)
+    //  - valid tender increments tipAdjustTenderCount and adds deposit
+    // ---------------------------
+    @Test
+    fun `generateDeposits filters and adds appropriately`() {
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "generateDeposits",
+            String::class.java,
+            List::class.java,
+            BatchReport::class.java
+        )
+        method.isAccessible = true
+
+        // Use MockedStatic to control static TenderManager helper methods
+        // (isTenderStatusTypeValid, isCancelled, isVoided, isFailedToVoid)
+        val mockedStatic = Mockito.mockStatic(TenderManager::class.java)
+        try {
+            // Prepare a report that will collect deposits and count tipAdjustTenderCount
+            val report = BatchReport()
+
+            // 1) Tender with invalid status -> should be skipped immediately
+            val tInvalid = Mockito.mock(TxDbTender::class.java)
+            whenever(tInvalid.tenderStatusType).thenReturn(TenderStatusType.Pending)
+            // static will return false for this status
+            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Pending) }
+                .thenReturn(false)
+
+            // 2) Non-auth tender that is cancelled -> skip
+            val tNonAuthCancelled = Mockito.mock(TxDbTender::class.java)
+            whenever(tNonAuthCancelled.tenderStatusType).thenReturn(TenderStatusType.Completed)
+            whenever(tNonAuthCancelled.paymentType).thenReturn(PaymentType.Cash)
+            whenever(tenderManager.isNonAuthTender(tNonAuthCancelled)).thenReturn(true)
+            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Completed) }
+                .thenReturn(true)
+            mockedStatic.`when`<Boolean> { TenderManager.isCancelled(tNonAuthCancelled) }
+                .thenReturn(true)
+
+            // 3) Non-auth tender that is voided -> skip
+            val tNonAuthVoided = Mockito.mock(TxDbTender::class.java)
+            whenever(tNonAuthVoided.tenderStatusType).thenReturn(TenderStatusType.Completed)
+            whenever(tNonAuthVoided.paymentType).thenReturn(PaymentType.Cash)
+            whenever(tenderManager.isNonAuthTender(tNonAuthVoided)).thenReturn(true)
+            mockedStatic.`when`<Boolean> { TenderManager.isVoided(tNonAuthVoided) }.thenReturn(true)
+
+            // 4) Tender failed to void -> skip
+            val tFailedVoid = Mockito.mock(TxDbTender::class.java)
+            whenever(tFailedVoid.tenderStatusType).thenReturn(TenderStatusType.Completed)
+            mockedStatic.`when`<Boolean> { TenderManager.isFailedToVoid(tFailedVoid) }.thenReturn(true)
+
+            // 5) Valid credit card tender -> should be added and tipAdjustTenderCount incremented
+            val tValid = Mockito.mock(TxDbTender::class.java)
+            whenever(tValid.tenderStatusType).thenReturn(TenderStatusType.Completed)
+            whenever(tValid.tenderType).thenReturn(TenderType.Normal)
+            whenever(tValid.paymentType).thenReturn(PaymentType.CreditCard)
+            whenever(tValid.tenderCreditStatusType).thenReturn(TenderCreditStatusType.Authorized)
+            whenever(tValid.cvmResult).thenReturn(CvmResult.Signature)
+            whenever(tValid.orderAmount).thenReturn(BigDecimal("10.00"))
+            whenever(tValid.tipAmount).thenReturn(BigDecimal("2.00"))
+            whenever(tValid.changeAmount).thenReturn(BigDecimal.ZERO)
+            whenever(tValid.totalAmount).thenReturn(BigDecimal("12.00"))
+            whenever(tValid.amountReceived).thenReturn(BigDecimal("12.00"))
+            // ensure static checks for valid status return true
+            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Completed) }
+                .thenReturn(true)
+            // ensure non-auth checks return false for this tender
+            whenever(tenderManager.isNonAuthTender(tValid)).thenReturn(false)
+            // static checks for cancelled/void/failedToVoid should be false for tValid
+            mockedStatic.`when`<Boolean> { TenderManager.isCancelled(tValid) }.thenReturn(false)
+            mockedStatic.`when`<Boolean> { TenderManager.isVoided(tValid) }.thenReturn(false)
+            mockedStatic.`when`<Boolean> { TenderManager.isFailedToVoid(tValid) }.thenReturn(false)
+
+            // For custom tender matching when adding deposit: return null (new deposit)
+            whenever(batchManager.getCustomTenderFieldsDto(any())).thenReturn(null)
+
+            // now call generateDeposits with a list of tenders that contains all cases
+            val tenders = listOf(tInvalid, tNonAuthCancelled, tNonAuthVoided, tFailedVoid, tValid)
+
+            method.invoke(useCase, "tag", tenders, report)
+
+            // Only tValid should have resulted in a deposit being added
+            // and tipAdjustTenderCount should be incremented once (for tValid)
+            assertEquals(1, report.deposits.size)
+            val dep = report.deposits[0]
+            assertEquals(PaymentType.CreditCard, dep.paymentType)
+            assertEquals(BigDecimal("10.00"), dep.orderAmount)
+            assertEquals(BigDecimal("2.00"), dep.tipAmount)
+            assertEquals(BigDecimal("12.00"), dep.totalAmount)
+            assertEquals(1, report.tipAdjustTenderCount)
+        } finally {
+            mockedStatic.close()
+        }
+    }
+
+    // ---------------------------
+    // getBatchReport exception propagation (private)
+    // ---------------------------
+    @Test(expected = RuntimeException::class)
+    fun `getBatchReport rethrows exceptions from repository`() {
+        // call private getBatchReport and ensure exception is rethrown
+        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
+            "getBatchReport",
+            String::class.java,
+            Long::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+
+        // make repository throw when fetching transactions
+        whenever(transactionRepository.getTransactionsFromBatchNumber(999L))
+            .thenThrow(RuntimeException("db fail"))
+
+        // invoking should rethrow
+        method.invoke(useCase, "tag", 999L)
+    }
+
+    // ---------------------------
+    // execute() mapping behavior
+    // ---------------------------
+    @Test
+    fun `execute returns batch summary responses for given batch numbers when no transactions`() {
+        // If repository returns null cursor for a batch, getBatchReport returns an empty report.
+        whenever(transactionRepository.getTransactionsFromBatchNumber(1L)).thenReturn(null)
+        whenever(transactionRepository.getTransactionsFromBatchNumber(2L)).thenReturn(null)
+
+        val results = useCase.execute("tag", listOf(1L, 2L))
+
+        assertEquals(2, results.size)
+        assertEquals(1L, results[0].batchNumber)
+        assertEquals(2L, results[1].batchNumber)
+        assertNotNull(results[0].batchReport)
+        assertNotNull(results[1].batchReport)
+    }
 }
 
-// -------------------------------
-// DASHBOARD VIEWS (unchanged behavior)
-// -------------------------------
-function renderPackages(sortKey = null) {
-  inComparison = false;
-  currentLevel = "package";
-  currentPackage = null;
-  currentClass = null;
-  document.getElementById("backBtn").style.display = "none";
-
-  let rows = packageData.map(r => ({ ...r })); // shallow copy
-  if (sortKey) {
-    // toggle behavior handled by renderSorted
-    rows = sortData(rows, sortKey, currentSort.asc);
-  } else if (currentSort.key && currentSort.key !== null) {
-    rows = sortData(rows, currentSort.key, currentSort.asc);
-  }
-
-  rows = applySearchFilter(rows);
-
-  renderTable([
-    { key: "package", label: "Package" },
-    { key: "classes", label: "Total Classes" },
-    { key: "inst", label: "Instruction %" },
-    { key: "branch", label: "Branch %" },
-    { key: "avg", label: "Average %" },
-    { key: "status", label: "Status" }
-  ], rows, row => renderClasses(row.package));
-}
-
-function renderClasses(pkgName, sortKey = null) {
-  inComparison = false;
-  currentLevel = "class";
-  currentPackage = pkgName;
-  currentClass = null;
-  document.getElementById("backBtn").style.display = "inline-block";
-
-  let rows = classData.filter(r => r.package === pkgName).map(r => ({ ...r }));
-  if (sortKey) rows = sortData(rows, sortKey, currentSort.asc);
-  else if (currentSort.key) rows = sortData(rows, currentSort.key, currentSort.asc);
-
-  rows = applySearchFilter(rows);
-
-  renderTable([
-    { key: "class", label: "Class" },
-    { key: "methods", label: "Total Methods" },
-    { key: "inst", label: "Instruction %" },
-    { key: "branch", label: "Branch %" },
-    { key: "avg", label: "Average %" },
-    { key: "status", label: "Status" }
-  ], rows, row => renderMethods(row.class));
-}
-
-function renderMethods(className, sortKey = null) {
-  inComparison = false;
-  currentLevel = "method";
-  currentClass = className;
-  document.getElementById("backBtn").style.display = "inline-block";
-
-  let rows = methodData.filter(r => r.class === className).map(r => ({ ...r }));
-  if (sortKey) rows = sortData(rows, sortKey, currentSort.asc);
-  else if (currentSort.key) rows = sortData(rows, currentSort.key, currentSort.asc);
-
-  rows = applySearchFilter(rows);
-
-  renderTable([
-    { key: "method", label: "Method" },
-    { key: "line", label: "Line" },
-    { key: "inst", label: "Instruction %" },
-    { key: "branch", label: "Branch %" },
-    { key: "avg", label: "Average %" },
-    { key: "status", label: "Status" }
-  ], rows);
-}
-
-// -------------------------------
-// COMPARISON VIEWS (full delta at package/class/method level)
-// -------------------------------
-// Helper: lookup old values by package/class/method
-const oldPackageMap = () => {
-  const m = new Map();
-  for (const r of oldPackageData) m.set(r.package, r);
-  return m;
-};
-const oldClassMap = () => {
-  const m = new Map();
-  for (const r of oldClassData) m.set(`${r.package}||${r.class}`, r);
-  return m;
-};
-const oldMethodMap = () => {
-  const m = new Map();
-  for (const r of oldMethodData) m.set(`${r.package}||${r.class}||${r.method}`, r);
-  return m;
-};
-
-function renderComparisonPackages(sortKey = null) {
-  inComparison = true;
-  currentLevel = "comp-package";
-  currentPackage = null;
-  currentClass = null;
-  document.getElementById("backBtn").style.display = "none";
-
-  const prevMap = oldPackageMap();
-  const changed = [];
-
-  for (const cur of packageData) {
-    const prev = prevMap.get(cur.package);
-    if (!prev) continue;
-    const di = Number((cur.inst - prev.inst).toFixed(2));
-    const db = Number((cur.branch - prev.branch).toFixed(2));
-    const da = Number((cur.avg - prev.avg).toFixed(2));
-    if (di === 0 && db === 0 && da === 0) continue;
-    changed.push({
-      package: cur.package,
-      // store numeric delta too for sorting if needed
-      delta_inst: di,
-      delta_branch: db,
-      delta_avg: da,
-      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
-      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
-      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
-    });
-  }
-
-  // default sort: largest avg delta descending
-  if (!sortKey) {
-    changed.sort((a,b) => b.delta_avg - a.delta_avg);
-    currentSort = { key: "delta_avg", asc: false };
-  } else {
-    // if user click to sort, use that key (supports delta_inst/delta_branch/delta_avg or inst/branch/avg)
-    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
-    changed.sort((a,b) => {
-      const A = a[sortKey], B = b[sortKey];
-      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
-      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
-    });
-  }
-
-  const rows = changed.map(r => ({
-    package: r.package,
-    inst: r.inst,
-    branch: r.branch,
-    avg: r.avg,
-    delta_inst: r.delta_inst,
-    delta_branch: r.delta_branch,
-    delta_avg: r.delta_avg
-  }));
-
-  renderTable([
-    { key: "package", label: "Package" },
-    { key: "inst", label: "Instruction (cur ±Δ)" },
-    { key: "branch", label: "Branch (cur ±Δ)" },
-    { key: "avg", label: "Average (cur ±Δ)" }
-  ], rows, row => renderComparisonClasses(row.package));
-}
-
-function renderComparisonClasses(pkgName, sortKey = null) {
-  inComparison = true;
-  currentLevel = "comp-class";
-  currentPackage = pkgName;
-  currentClass = null;
-  document.getElementById("backBtn").style.display = "inline-block";
-
-  const prevMap = oldClassMap();
-  const changed = [];
-
-  const classes = classData.filter(c => c.package === pkgName);
-  for (const cur of classes) {
-    const prev = prevMap.get(`${cur.package}||${cur.class}`);
-    if (!prev) continue;
-    const di = Number((cur.inst - prev.inst).toFixed(2));
-    const db = Number((cur.branch - prev.branch).toFixed(2));
-    const da = Number((cur.avg - prev.avg).toFixed(2));
-    if (di === 0 && db === 0 && da === 0) continue;
-    changed.push({
-      class: cur.class,
-      delta_inst: di,
-      delta_branch: db,
-      delta_avg: da,
-      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
-      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
-      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
-    });
-  }
-
-  // default sort descending by delta_avg
-  if (!sortKey) {
-    changed.sort((a,b) => b.delta_avg - a.delta_avg);
-    currentSort = { key: "delta_avg", asc: false };
-  } else {
-    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
-    changed.sort((a,b) => {
-      const A = a[sortKey], B = b[sortKey];
-      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
-      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
-    });
-  }
-
-  const rows = changed.map(r => ({
-    class: r.class,
-    inst: r.inst,
-    branch: r.branch,
-    avg: r.avg,
-    delta_inst: r.delta_inst,
-    delta_branch: r.delta_branch,
-    delta_avg: r.delta_avg
-  }));
-
-  renderTable([
-    { key: "class", label: "Class" },
-    { key: "inst", label: "Instruction (cur ±Δ)" },
-    { key: "branch", label: "Branch (cur ±Δ)" },
-    { key: "avg", label: "Average (cur ±Δ)" }
-  ], rows, row => renderComparisonMethods(pkgName, row.class));
-}
-
-function renderComparisonMethods(pkgName, className, sortKey = null) {
-  inComparison = true;
-  currentLevel = "comp-method";
-  currentPackage = pkgName;
-  currentClass = className;
-  document.getElementById("backBtn").style.display = "inline-block";
-
-  const prevMap = oldMethodMap();
-  const changed = [];
-
-  const methods = methodData.filter(m => m.package === pkgName && m.class === className);
-  for (const cur of methods) {
-    const prev = prevMap.get(`${cur.package}||${cur.class}||${cur.method}`);
-    if (!prev) continue;
-    const di = Number((cur.inst - prev.inst).toFixed(2));
-    const db = Number((cur.branch - prev.branch).toFixed(2));
-    const da = Number((cur.avg - prev.avg).toFixed(2));
-    if (di === 0 && db === 0 && da === 0) continue;
-    changed.push({
-      method: cur.method,
-      delta_inst: di,
-      delta_branch: db,
-      delta_avg: da,
-      inst: `${cur.inst} <span class='${di>=0?'progress-up':'progress-down'}'>(${di>=0?'+':''}${di})</span>`,
-      branch: `${cur.branch} <span class='${db>=0?'progress-up':'progress-down'}'>(${db>=0?'+':''}${db})</span>`,
-      avg: `${cur.avg} <span class='${da>=0?'progress-up':'progress-down'}'>(${da>=0?'+':''}${da})</span>`
-    });
-  }
-
-  // default sort descending by delta_avg
-  if (!sortKey) {
-    changed.sort((a,b) => b.delta_avg - a.delta_avg);
-    currentSort = { key: "delta_avg", asc: false };
-  } else {
-    const asc = currentSort.key === sortKey ? currentSort.asc : (sortKey.startsWith("delta_") ? false : true);
-    changed.sort((a,b) => {
-      const A = a[sortKey], B = b[sortKey];
-      if (typeof A === "number" && typeof B === "number") return asc ? A - B : B - A;
-      return asc ? String(A).localeCompare(String(B)) : String(B).localeCompare(String(A));
-    });
-  }
-
-  const rows = changed.map(r => ({
-    method: r.method,
-    inst: r.inst,
-    branch: r.branch,
-    avg: r.avg,
-    delta_inst: r.delta_inst,
-    delta_branch: r.delta_branch,
-    delta_avg: r.delta_avg
-  }));
-
-  renderTable([
-    { key: "method", label: "Method" },
-    { key: "inst", label: "Instruction (cur ±Δ)" },
-    { key: "branch", label: "Branch (cur ±Δ)" },
-    { key: "avg", label: "Average (cur ±Δ)" }
-  ], rows);
-}
-
-// -------------------------------
-// RENDER SORTED CONTROLLER
-// - detects whether current view is comparison vs dashboard
-// - key provided is the column key from renderTable
-// -------------------------------
-function renderSorted(key) {
-  // When key is a displayed delta cell (we used delta_* internally),
-  // user clicking will toggle asc/desc. We map displayed keys to internal keys:
-  if (inComparison) {
-    // map clicked column keys to internal sort key if needed
-    if (currentLevel === "comp-package") renderComparisonPackages(key);
-    else if (currentLevel === "comp-class") renderComparisonClasses(currentPackage, key);
-    else if (currentLevel === "comp-method") renderComparisonMethods(currentPackage, currentClass, key);
-    else renderComparisonPackages(key);
-  } else {
-    if (currentLevel === "package") renderPackages(key);
-    else if (currentLevel === "class") renderClasses(currentPackage, key);
-    else if (currentLevel === "method") renderMethods(currentClass, key);
-    else renderPackages(key);
-  }
-}
-
-// -------------------------------
-// TAB LOGIC (assumes elements exist)
-// -------------------------------
-document.getElementById("tabDashboard").onclick = () => {
-  document.getElementById("tabDashboard").classList.add("active");
-  document.getElementById("tabCompare").classList.remove("active");
-  // reset current sort for dashboard if you prefer
-  currentSort = { key: null, asc: true };
-  renderPackages();
-};
-
-document.getElementById("tabCompare").onclick = () => {
-  document.getElementById("tabCompare").classList.add("active");
-  document.getElementById("tabDashboard").classList.remove("active");
-  // default comparison landing page: package-level changes
-  currentSort = { key: "delta_avg", asc: false };
-  renderComparisonPackages();
-};
-
-// -------------------------------
-// BACK BUTTON
-// -------------------------------
-document.getElementById("backBtn").onclick = () => {
-  if (inComparison) {
-    if (currentLevel === "comp-method") renderComparisonClasses(currentPackage);
-    else if (currentLevel === "comp-class") renderComparisonPackages();
-    else renderComparisonPackages();
-  } else {
-    if (currentLevel === "method") renderClasses(currentPackage);
-    else if (currentLevel === "class") renderPackages();
-    else renderPackages();
-  }
-};
-
-// -------------------------------
-// SEARCH BOX
-// -------------------------------
-document.getElementById("searchBox").addEventListener("input", () => {
-  // keep current view, just re-render
-  if (inComparison) {
-    if (currentLevel === "comp-package") renderComparisonPackages();
-    else if (currentLevel === "comp-class") renderComparisonClasses(currentPackage);
-    else if (currentLevel === "comp-method") renderComparisonMethods(currentPackage, currentClass);
-    else renderComparisonPackages();
-  } else {
-    if (currentLevel === "package") renderPackages();
-    else if (currentLevel === "class") renderClasses(currentPackage);
-    else if (currentLevel === "method") renderMethods(currentClass);
-    else renderPackages();
-  }
-});
-
-// -------------------------------
-// INIT
-// -------------------------------
-window.onload = () => {
-  loadAllCSVs();
-};
 
 
 
@@ -776,6 +447,7 @@ table tr:hover {
   color: red;
   font-weight: bold;
 }
+
 
 
 
