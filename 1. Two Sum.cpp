@@ -1,453 +1,314 @@
 
-package com.imobile3.pos.data.module.batch.report
+package com.imobile3.pos.data.module.batch.close
 
-import android.database.Cursor
-import android.util.SparseArray
-import com.imobile3.pos.data.module.batch.BatchManager
-import com.imobile3.pos.data.module.order.cart.tender.TenderManager
-import com.imobile3.pos.data.module.order.cart.transaction.TransactionRepository
-import com.imobile3.pos.library.constants.enums.CvmResult
-import com.imobile3.pos.library.domainobjects.*
-import com.imobile3.pos.library.webservices.enums.*
+import com.imobile3.pos.data.IdManager
+import com.imobile3.pos.data.di.AppEntryPoint
+import com.imobile3.pos.data.module.account.repository.UserHelper
+import com.imobile3.pos.data.module.batch.BatchHelper
+import com.imobile3.pos.library.domainobjects.TxDbBatchTransfer
+import com.imobile3.pos.library.webservices.enums.TransferType
+import com.imobile3.pos.library.webservices.transferobjects.BatchDepositDto
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.ArgumentMatchers.any
-import org.mockito.ArgumentMatchers.eq
-import org.mockito.Mockito
+import org.junit.runner.RunWith
+import org.mockito.Mockito.*
 import org.mockito.kotlin.whenever
-import java.lang.reflect.Method
+import org.mockito.junit.MockitoJUnitRunner
+import org.mockito.MockedStatic
+import java.lang.reflect.Field
 import java.math.BigDecimal
+import java.util.Date
 
-class GetBatchSummaryListWithReportsUseCaseTest {
+@RunWith(MockitoJUnitRunner::class)
+class BatchTotalsTest {
 
-    private lateinit var transactionRepository: TransactionRepository
-    private lateinit var batchManager: BatchManager
-    private lateinit var tenderManager: TenderManager
-    private lateinit var useCase: GetBatchSummaryListWithReportsUseCase
+    // static mocks holders
+    private var appEntryPointStatic: MockedStatic<AppEntryPoint>? = null
+    private var userHelperStatic: MockedStatic<UserHelper>? = null
+    private var batchHelperStatic: MockedStatic<BatchHelper>? = null
+
+    private lateinit var mockIdManager: IdManager
 
     @Before
-    fun setup() {
-        transactionRepository = Mockito.mock(TransactionRepository::class.java)
-        batchManager = Mockito.mock(BatchManager::class.java)
-        tenderManager = Mockito.mock(TenderManager::class.java)
-        useCase = GetBatchSummaryListWithReportsUseCase(
-            transactionRepository,
-            batchManager,
-            tenderManager
-        )
+    fun setUp() {
+        // mock AppEntryPoint.get().getIdManager()
+        appEntryPointStatic = mockStatic(AppEntryPoint::class.java)
+        userHelperStatic = mockStatic(UserHelper::class.java)
+        batchHelperStatic = mockStatic(BatchHelper::class.java)
+
+        mockIdManager = mock(IdManager::class.java)
+        val mockAppEntry = mock(AppEntryPoint::class.java)
+        whenever(mockAppEntry.getIdManager()).thenReturn(mockIdManager)
+        appEntryPointStatic!!.`when`<AppEntryPoint> { AppEntryPoint.get() }.thenReturn(mockAppEntry)
+
+        whenever(UserHelper.getUserId()).thenReturn("test-user")
+        whenever(BatchHelper.getCurrentBatchNumber()).thenReturn("BATCH-123")
     }
 
-    // ---------------------------
-    // removeZeroTotalDeposits()
-    // ---------------------------
+    @After
+    fun tearDown() {
+        appEntryPointStatic?.close()
+        userHelperStatic?.close()
+        batchHelperStatic?.close()
+    }
+
+    // utility: read private field by name
+    private fun getBigDecimalField(obj: Any, name: String): BigDecimal? {
+        val f: Field = obj.javaClass.getDeclaredField(name)
+        f.isAccessible = true
+        return f.get(obj) as? BigDecimal
+    }
+
+    private fun getBooleanField(obj: Any, name: String): Boolean {
+        val f: Field = obj.javaClass.getDeclaredField(name)
+        f.isAccessible = true
+        return f.getBoolean(obj)
+    }
+
+    private fun getNullableBigDecimalField(obj: Any, name: String): BigDecimal? {
+        val f: Field = obj.javaClass.getDeclaredField(name)
+        f.isAccessible = true
+        return f.get(obj) as? BigDecimal
+    }
+
+    /**
+     * Test populate(...) with one deposit of each supported type.
+     * Verifies flags and totals are set as expected.
+     */
     @Test
-    fun `removeZeroTotalDeposits removes zero total deposits`() {
-        val method: Method = GetBatchSummaryListWithReportsUseCase::class.java
-            .getDeclaredMethod("removeZeroTotalDeposits", BatchReport::class.java)
-        method.isAccessible = true
+    fun `populate should sum expected and received totals and set flags for each payment type`() {
+        // create mocks for deposits
+        val creditDeposit = mock(BatchDepositDto::class.java)
+        whenever(creditDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.CreditCard)
+        whenever(creditDeposit.totalAmount).thenReturn(BigDecimal("100.00"))
+        whenever(creditDeposit.amountReceived).thenReturn(BigDecimal("101.50"))
 
-        val report = BatchReport()
+        val cashDeposit = mock(BatchDepositDto::class.java)
+        whenever(cashDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.Cash)
+        whenever(cashDeposit.totalAmount).thenReturn(BigDecimal("50.00"))
+        // for cash the class code uses getOrderAmount() for received:
+        whenever(cashDeposit.orderAmount).thenReturn(BigDecimal("49.00"))
+        whenever(cashDeposit.tipAmount).thenReturn(BigDecimal("5.00"))
 
-        val zero = BatchDepositDto().apply {
-            paymentType = PaymentType.Cash
-            totalAmount = BigDecimal.ZERO
-        }
-        val nonZero = BatchDepositDto().apply {
-            paymentType = PaymentType.Cash
-            totalAmount = BigDecimal("12.34")
-        }
+        val debitDeposit = mock(BatchDepositDto::class.java)
+        whenever(debitDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.DebitCard)
+        whenever(debitDeposit.totalAmount).thenReturn(BigDecimal("20.00"))
+        whenever(debitDeposit.amountReceived).thenReturn(BigDecimal("20.00"))
 
-        report.addDeposit(zero)
-        report.addDeposit(nonZero)
+        val checkDeposit = mock(BatchDepositDto::class.java)
+        whenever(checkDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.Check)
+        whenever(checkDeposit.totalAmount).thenReturn(BigDecimal("10.00"))
+        whenever(checkDeposit.amountReceived).thenReturn(BigDecimal("10.00"))
 
-        // pre-check
-        assertEquals(2, report.deposits.size)
+        val giftCertDeposit = mock(BatchDepositDto::class.java)
+        whenever(giftCertDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.GiftCertificate)
+        whenever(giftCertDeposit.totalAmount).thenReturn(BigDecimal("5.00"))
+        whenever(giftCertDeposit.amountReceived).thenReturn(BigDecimal("4.00"))
 
-        method.invoke(useCase, report)
+        val giftCardDeposit = mock(BatchDepositDto::class.java)
+        whenever(giftCardDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.GiftCard)
+        whenever(giftCardDeposit.totalAmount).thenReturn(BigDecimal("6.00"))
+        whenever(giftCardDeposit.amountReceived).thenReturn(BigDecimal("6.00"))
 
-        // only non-zero remains
-        assertEquals(1, report.deposits.size)
-        assertEquals(BigDecimal("12.34"), report.deposits[0].totalAmount)
-    }
+        val customDeposit = mock(BatchDepositDto::class.java)
+        whenever(customDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.CustomTender)
+        whenever(customDeposit.totalAmount).thenReturn(BigDecimal("2.00"))
+        whenever(customDeposit.amountReceived).thenReturn(BigDecimal("1.50"))
 
-    // ---------------------------
-    // shouldUpdateTenderCount()
-    // ---------------------------
-    @Test
-    fun `shouldUpdateTenderCount returns true for valid credit card authorized with cvm not pin`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "shouldUpdateTenderCount",
-            TenderType::class.java,
-            TenderStatusType::class.java,
-            TxDbTender::class.java
+        val ebtDeposit = mock(BatchDepositDto::class.java)
+        whenever(ebtDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.EbtCard)
+        whenever(ebtDeposit.totalAmount).thenReturn(BigDecimal("7.00"))
+        whenever(ebtDeposit.amountReceived).thenReturn(BigDecimal("7.00"))
+
+        // transfers: include one SafeDrop (should be ignored) and one other (should be added to cash expected)
+        val safeDropTransfer = mock(TxDbBatchTransfer::class.java)
+        whenever(safeDropTransfer.transferTypeId).thenReturn(TransferType.SafeDrop)
+        whenever(safeDropTransfer.amount).thenReturn(BigDecimal("1000.00"))
+
+        val otherTransfer = mock(TxDbBatchTransfer::class.java)
+        whenever(otherTransfer.transferTypeId).thenReturn(TransferType.Other)
+        whenever(otherTransfer.amount).thenReturn(BigDecimal("30.00"))
+
+        val deposits = listOf(
+            creditDeposit,
+            cashDeposit,
+            debitDeposit,
+            checkDeposit,
+            giftCertDeposit,
+            giftCardDeposit,
+            customDeposit,
+            ebtDeposit
         )
-        method.isAccessible = true
 
-        val tender = Mockito.mock(TxDbTender::class.java)
-        whenever(tender.paymentType).thenReturn(PaymentType.CreditCard)
-        whenever(tender.tenderCreditStatusType).thenReturn(TenderCreditStatusType.Authorized)
-        whenever(tender.cvmResult).thenReturn(CvmResult.Signature)
+        val transfers = listOf(safeDropTransfer, otherTransfer)
 
-        val res = method.invoke(
-            useCase,
-            TenderType.Normal,
-            TenderStatusType.Completed,
-            tender
-        ) as Boolean
+        val totals = BatchTotals.populate(deposits, transfers)
 
-        assertTrue(res)
+        // Verify flags
+        assertTrue(getBooleanField(totals, "mNeedsCreditDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsCashDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsDebitDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsCheckDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsGiftCertificateDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsGiftCardDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsCustomTendersDeposit"))
+        assertTrue(getBooleanField(totals, "mNeedsEbtDeposit"))
+
+        // Verify numeric totals (expected)
+        // credit expected = 100.00, received = 101.50
+        assertEquals(BigDecimal("100.00"), getBigDecimalField(totals, "mCreditExpectedTotal"))
+        assertEquals(BigDecimal("101.50"), getBigDecimalField(totals, "mCreditReceivedTotal"))
+
+        // cash expected = 50.00 + otherTransfer(30.00) = 80.00; received = orderAmount 49.00; tips = 5.00
+        assertEquals(BigDecimal("80.00"), getBigDecimalField(totals, "mCashExpectedTotal"))
+        assertEquals(BigDecimal("49.00"), getBigDecimalField(totals, "mCashReceivedTotal"))
+        assertEquals(BigDecimal("5.00"), getBigDecimalField(totals, "mCashTips"))
+
+        // debit
+        assertEquals(BigDecimal("20.00"), getBigDecimalField(totals, "mDebitExpectedTotal"))
+        assertEquals(BigDecimal("20.00"), getBigDecimalField(totals, "mDebitReceivedTotal"))
+
+        // check
+        assertEquals(BigDecimal("10.00"), getBigDecimalField(totals, "mCheckExpectedTotal"))
+        assertEquals(BigDecimal("10.00"), getBigDecimalField(totals, "mCheckReceivedTotal"))
+
+        // gift certificate
+        assertEquals(BigDecimal("5.00"), getBigDecimalField(totals, "mGiftCertificateExpectedTotal"))
+        assertEquals(BigDecimal("4.00"), getBigDecimalField(totals, "mGiftCertificateReceivedTotal"))
+
+        // gift card
+        assertEquals(BigDecimal("6.00"), getBigDecimalField(totals, "mGiftCardExpectedTotal"))
+        assertEquals(BigDecimal("6.00"), getBigDecimalField(totals, "mGiftCardReceivedTotal"))
+
+        // custom
+        assertEquals(BigDecimal("2.00"), getBigDecimalField(totals, "mCustomTenderExpectedTotal"))
+        assertEquals(BigDecimal("1.50"), getBigDecimalField(totals, "mCustomTenderReceivedTotal"))
+
+        // ebt
+        assertEquals(BigDecimal("7.00"), getBigDecimalField(totals, "mEbtExpectedTotal"))
+        assertEquals(BigDecimal("7.00"), getBigDecimalField(totals, "mEbtReceivedTotal"))
     }
 
+    /**
+     * Test calculateOverShortTotals produces correct over/short values only when needs flag is true.
+     */
     @Test
-    fun `shouldUpdateTenderCount returns false for non-credit payment`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "shouldUpdateTenderCount",
-            TenderType::class.java,
-            TenderStatusType::class.java,
-            TxDbTender::class.java
-        )
-        method.isAccessible = true
+    fun `calculateOverShortTotals should compute over short only for needed deposit types`() {
+        // create a simple BatchTotals and set private fields using reflection
+        val totals = BatchTotals()
 
-        val tender = Mockito.mock(TxDbTender::class.java)
-        whenever(tender.paymentType).thenReturn(PaymentType.Cash)
+        // set needs flags and values via reflection
+        val creditExpectedField = totals.javaClass.getDeclaredField("mCreditExpectedTotal")
+        creditExpectedField.isAccessible = true
+        creditExpectedField.set(totals, BigDecimal("100.00"))
 
-        val res = method.invoke(
-            useCase,
-            TenderType.Normal,
-            TenderStatusType.Completed,
-            tender
-        ) as Boolean
+        val creditReceivedField = totals.javaClass.getDeclaredField("mCreditReceivedTotal")
+        creditReceivedField.isAccessible = true
+        creditReceivedField.set(totals, BigDecimal("110.00"))
 
-        assertFalse(res)
+        // set boolean flag
+        val needsCredit = totals.javaClass.getDeclaredField("mNeedsCreditDeposit")
+        needsCredit.isAccessible = true
+        needsCredit.setBoolean(totals, true)
+
+        // cash: expected 80, received 70 -> overShort -10
+        val cashExpected = totals.javaClass.getDeclaredField("mCashExpectedTotal")
+        cashExpected.isAccessible = true
+        cashExpected.set(totals, BigDecimal("80.00"))
+
+        val cashReceived = totals.javaClass.getDeclaredField("mCashReceivedTotal")
+        cashReceived.isAccessible = true
+        cashReceived.set(totals, BigDecimal("70.00"))
+
+        val needsCash = totals.javaClass.getDeclaredField("mNeedsCashDeposit")
+        needsCash.isAccessible = true
+        needsCash.setBoolean(totals, true)
+
+        // debit NOT needed -> overShort should remain null
+        val debitExpected = totals.javaClass.getDeclaredField("mDebitExpectedTotal")
+        debitExpected.isAccessible = true
+        debitExpected.set(totals, BigDecimal("20.00"))
+        val debitReceived = totals.javaClass.getDeclaredField("mDebitReceivedTotal")
+        debitReceived.isAccessible = true
+        debitReceived.set(totals, BigDecimal("25.00"))
+        val needsDebit = totals.javaClass.getDeclaredField("mNeedsDebitDeposit")
+        needsDebit.isAccessible = true
+        needsDebit.setBoolean(totals, false)
+
+        // run calculation
+        totals.calculateOverShortTotals()
+
+        // check credit overShort = 110 - 100 = 10
+        val creditOverShort = getNullableBigDecimalField(totals, "mCreditOverShort")
+        assertNotNull("creditOverShort should be set", creditOverShort)
+        assertEquals(BigDecimal("10.00"), creditOverShort)
+
+        // cash overShort = 70 - 80 = -10
+        val cashOverShort = getNullableBigDecimalField(totals, "mCashOverShort")
+        assertNotNull("cashOverShort should be set", cashOverShort)
+        assertEquals(BigDecimal("-10.00"), cashOverShort)
+
+        // debit overShort should be null because needsDebit false
+        val debitOverShort = getNullableBigDecimalField(totals, "mDebitOverShort")
+        assertNull("debitOverShort should be null when not needed", debitOverShort)
     }
 
-    // ---------------------------
-    // getCustomTenderDeposits()
-    // ---------------------------
+    /**
+     * Test finalizeBatchDeposits handles empty input and skips deposits with null payment type.
+     *
+     * NOTE: finalizeBatchDeposits creates new BatchDepositDto(deposit) internally (copy constructor).
+     * Intercepting that constructor requires more invasive bytecode/construction mocking (PowerMock,
+     * or constructor mocking). To remain within Mockito + JUnit, here we:
+     *  - verify that passing an empty list returns an empty list
+     *  - verify that deposits with null paymentType are skipped (by providing a mocked deposit with null
+     *    paymentType and asserting returned list is empty).
+     *
+     * For full verification of setDepositAmount/setOverShortAmount on the created objects you'd need
+     * access to a testable BatchDepositDto copy constructor or to use constructor mocking tools.
+     */
     @Test
-    fun `getCustomTenderDeposits adds new custom deposit when none exists`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "getCustomTenderDeposits",
-            BatchReport::class.java,
-            TxDbTender::class.java,
-            String::class.java
-        )
-        method.isAccessible = true
+    fun `finalizeBatchDeposits should return empty when input empty or when payment type null`() {
+        val totals = BatchTotals()
 
-        val report = BatchReport()
+        // case: empty input
+        val resultEmpty = totals.finalizeBatchDeposits(emptyList())
+        assertTrue(resultEmpty.isEmpty())
 
-        val tender = Mockito.mock(TxDbTender::class.java)
-        whenever(tender.paymentType).thenReturn(PaymentType.CustomTender)
-        whenever(tender.orderAmount).thenReturn(BigDecimal("5.00"))
-        whenever(tender.tipAmount).thenReturn(BigDecimal("1.00"))
-        whenever(tender.changeAmount).thenReturn(BigDecimal.ZERO)
-        whenever(tender.totalAmount).thenReturn(BigDecimal("6.00"))
-        whenever(tender.amountReceived).thenReturn(BigDecimal("6.00"))
+        // case: deposit with null payment type should be skipped
+        val depositWithNullType = mock(BatchDepositDto::class.java)
+        whenever(depositWithNullType.paymentType).thenReturn(null)
 
-        val fields = Mockito.mock(CustomTenderFieldsDto::class.java)
-        whenever(fields.customTenderId).thenReturn("CT-101")
-        whenever(tender.customFields).thenReturn(fields)
-
-        // simulate no matching existing deposit
-        whenever(batchManager.getCustomTenderFieldsDto(any())).thenReturn(null)
-
-        method.invoke(useCase, report, tender, "tag")
-
-        assertEquals(1, report.deposits.size)
-        val added = report.deposits[0]
-        assertEquals(PaymentType.CustomTender, added.paymentType)
-        assertEquals(BigDecimal("5.00"), added.orderAmount)
-        assertEquals(BigDecimal("1.00"), added.tipAmount)
-        assertEquals(BigDecimal("6.00"), added.totalAmount)
-        assertEquals(BigDecimal("6.00"), added.amountReceived)
-        // custom fields json should be set (string) - toJson implementation unknown; just ensure not null when set by code
-        assertNotNull(added.customTenderFields)
+        val result = totals.finalizeBatchDeposits(listOf(depositWithNullType))
+        assertTrue(result.isEmpty())
     }
 
+    /**
+     * Additional integration style test: use populate -> calculateOverShortTotals -> finalizeBatchDeposits
+     * with an empty list for finalize (can't fully assert modified copied DTOs as explained).
+     */
     @Test
-    fun `getCustomTenderDeposits merges into existing deposit when customTenderId matches`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "getCustomTenderDeposits",
-            BatchReport::class.java,
-            TxDbTender::class.java,
-            String::class.java
-        )
-        method.isAccessible = true
+    fun `populate then calculate then finalize (integration smoke)`() {
+        val cashDeposit = mock(BatchDepositDto::class.java)
+        whenever(cashDeposit.paymentType).thenReturn(BatchDepositDto.PaymentType.Cash)
+        whenever(cashDeposit.totalAmount).thenReturn(BigDecimal("15.00"))
+        whenever(cashDeposit.orderAmount).thenReturn(BigDecimal("15.00"))
+        whenever(cashDeposit.tipAmount).thenReturn(BigDecimal("0.00"))
 
-        val report = BatchReport()
+        val deposits = listOf(cashDeposit)
+        val transfers = emptyList<TxDbBatchTransfer>()
 
-        // create existing deposit with custom id CT-201
-        val existing = BatchDepositDto().apply {
-            paymentType = PaymentType.CustomTender
-            orderAmount = BigDecimal("3.00")
-            tipAmount = BigDecimal("0.50")
-            changeAmount = BigDecimal.ZERO
-            totalAmount = BigDecimal("3.50")
-            amountReceived = BigDecimal("3.50")
-        }
-        report.addDeposit(existing)
+        val totals = BatchTotals.populate(deposits, transfers)
 
-        val existingFields = CustomTenderFieldsDto().apply { customTenderId = "CT-201" }
-        whenever(batchManager.getCustomTenderFieldsDto(existing)).thenReturn(existingFields)
+        totals.calculateOverShortTotals()
 
-        val tender = Mockito.mock(TxDbTender::class.java)
-        whenever(tender.paymentType).thenReturn(PaymentType.CustomTender)
-        whenever(tender.orderAmount).thenReturn(BigDecimal("2.00"))
-        whenever(tender.tipAmount).thenReturn(BigDecimal("0.25"))
-        whenever(tender.changeAmount).thenReturn(BigDecimal.ZERO)
-        whenever(tender.totalAmount).thenReturn(BigDecimal("2.25"))
-        whenever(tender.amountReceived).thenReturn(BigDecimal("2.25"))
-        whenever(tender.customFields).thenReturn(existingFields)
-
-        method.invoke(useCase, report, tender, "tag")
-
-        // deposit should be merged: orderAmount 3 + 2 = 5, tip 0.5 + 0.25 = 0.75, total 3.5 + 2.25 = 5.75
-        assertEquals(1, report.deposits.size)
-        val merged = report.deposits[0]
-        assertEquals(BigDecimal("5.00"), merged.orderAmount)
-        assertEquals(BigDecimal("0.75"), merged.tipAmount)
-        assertEquals(BigDecimal("5.75"), merged.totalAmount)
-    }
-
-    // ---------------------------
-    // generateUserTipTotal()
-    // ---------------------------
-    @Test
-    fun `generateUserTipTotal creates and accumulates per-user tip totals`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "generateUserTipTotal",
-            TxDbTransaction::class.java,
-            BatchReport::class.java
-        )
-        method.isAccessible = true
-
-        val report = BatchReport()
-
-        val tx1 = Mockito.mock(TxDbTransaction::class.java)
-        whenever(tx1.userId).thenReturn(77)
-        whenever(tx1.totalTips).thenReturn(BigDecimal("2.50"))
-
-        method.invoke(useCase, tx1, report)
-        assertEquals(1, report.userTipTotalMap.size())
-        assertEquals(BigDecimal("2.50"), report.userTipTotalMap[77])
-
-        val tx2 = Mockito.mock(TxDbTransaction::class.java)
-        whenever(tx2.userId).thenReturn(77)
-        whenever(tx2.totalTips).thenReturn(BigDecimal("1.25"))
-
-        method.invoke(useCase, tx2, report)
-        assertEquals(1, report.userTipTotalMap.size())
-        assertEquals(BigDecimal("3.75"), report.userTipTotalMap[77])
-    }
-
-    // ---------------------------
-    // generateDeposits() - exercise all branch filters:
-    //  - invalid tender status (skip)
-    //  - non-auth & cancelled (skip)
-    //  - non-auth & voided (skip)
-    //  - failedToVoid (skip)
-    //  - valid tender increments tipAdjustTenderCount and adds deposit
-    // ---------------------------
-    @Test
-    fun `generateDeposits filters and adds appropriately`() {
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "generateDeposits",
-            String::class.java,
-            List::class.java,
-            BatchReport::class.java
-        )
-        method.isAccessible = true
-
-        // Use MockedStatic to control static TenderManager helper methods
-        // (isTenderStatusTypeValid, isCancelled, isVoided, isFailedToVoid)
-        val mockedStatic = Mockito.mockStatic(TenderManager::class.java)
-        try {
-            // Prepare a report that will collect deposits and count tipAdjustTenderCount
-            val report = BatchReport()
-
-            // 1) Tender with invalid status -> should be skipped immediately
-            val tInvalid = Mockito.mock(TxDbTender::class.java)
-            whenever(tInvalid.tenderStatusType).thenReturn(TenderStatusType.Pending)
-            // static will return false for this status
-            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Pending) }
-                .thenReturn(false)
-
-            // 2) Non-auth tender that is cancelled -> skip
-            val tNonAuthCancelled = Mockito.mock(TxDbTender::class.java)
-            whenever(tNonAuthCancelled.tenderStatusType).thenReturn(TenderStatusType.Completed)
-            whenever(tNonAuthCancelled.paymentType).thenReturn(PaymentType.Cash)
-            whenever(tenderManager.isNonAuthTender(tNonAuthCancelled)).thenReturn(true)
-            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Completed) }
-                .thenReturn(true)
-            mockedStatic.`when`<Boolean> { TenderManager.isCancelled(tNonAuthCancelled) }
-                .thenReturn(true)
-
-            // 3) Non-auth tender that is voided -> skip
-            val tNonAuthVoided = Mockito.mock(TxDbTender::class.java)
-            whenever(tNonAuthVoided.tenderStatusType).thenReturn(TenderStatusType.Completed)
-            whenever(tNonAuthVoided.paymentType).thenReturn(PaymentType.Cash)
-            whenever(tenderManager.isNonAuthTender(tNonAuthVoided)).thenReturn(true)
-            mockedStatic.`when`<Boolean> { TenderManager.isVoided(tNonAuthVoided) }.thenReturn(true)
-
-            // 4) Tender failed to void -> skip
-            val tFailedVoid = Mockito.mock(TxDbTender::class.java)
-            whenever(tFailedVoid.tenderStatusType).thenReturn(TenderStatusType.Completed)
-            mockedStatic.`when`<Boolean> { TenderManager.isFailedToVoid(tFailedVoid) }.thenReturn(true)
-
-            // 5) Valid credit card tender -> should be added and tipAdjustTenderCount incremented
-            val tValid = Mockito.mock(TxDbTender::class.java)
-            whenever(tValid.tenderStatusType).thenReturn(TenderStatusType.Completed)
-            whenever(tValid.tenderType).thenReturn(TenderType.Normal)
-            whenever(tValid.paymentType).thenReturn(PaymentType.CreditCard)
-            whenever(tValid.tenderCreditStatusType).thenReturn(TenderCreditStatusType.Authorized)
-            whenever(tValid.cvmResult).thenReturn(CvmResult.Signature)
-            whenever(tValid.orderAmount).thenReturn(BigDecimal("10.00"))
-            whenever(tValid.tipAmount).thenReturn(BigDecimal("2.00"))
-            whenever(tValid.changeAmount).thenReturn(BigDecimal.ZERO)
-            whenever(tValid.totalAmount).thenReturn(BigDecimal("12.00"))
-            whenever(tValid.amountReceived).thenReturn(BigDecimal("12.00"))
-            // ensure static checks for valid status return true
-            mockedStatic.`when`<Boolean> { TenderManager.isTenderStatusTypeValid(TenderStatusType.Completed) }
-                .thenReturn(true)
-            // ensure non-auth checks return false for this tender
-            whenever(tenderManager.isNonAuthTender(tValid)).thenReturn(false)
-            // static checks for cancelled/void/failedToVoid should be false for tValid
-            mockedStatic.`when`<Boolean> { TenderManager.isCancelled(tValid) }.thenReturn(false)
-            mockedStatic.`when`<Boolean> { TenderManager.isVoided(tValid) }.thenReturn(false)
-            mockedStatic.`when`<Boolean> { TenderManager.isFailedToVoid(tValid) }.thenReturn(false)
-
-            // For custom tender matching when adding deposit: return null (new deposit)
-            whenever(batchManager.getCustomTenderFieldsDto(any())).thenReturn(null)
-
-            // now call generateDeposits with a list of tenders that contains all cases
-            val tenders = listOf(tInvalid, tNonAuthCancelled, tNonAuthVoided, tFailedVoid, tValid)
-
-            method.invoke(useCase, "tag", tenders, report)
-
-            // Only tValid should have resulted in a deposit being added
-            // and tipAdjustTenderCount should be incremented once (for tValid)
-            assertEquals(1, report.deposits.size)
-            val dep = report.deposits[0]
-            assertEquals(PaymentType.CreditCard, dep.paymentType)
-            assertEquals(BigDecimal("10.00"), dep.orderAmount)
-            assertEquals(BigDecimal("2.00"), dep.tipAmount)
-            assertEquals(BigDecimal("12.00"), dep.totalAmount)
-            assertEquals(1, report.tipAdjustTenderCount)
-        } finally {
-            mockedStatic.close()
-        }
-    }
-
-    // ---------------------------
-    // getBatchReport exception propagation (private)
-    // ---------------------------
-    @Test(expected = RuntimeException::class)
-    fun `getBatchReport rethrows exceptions from repository`() {
-        // call private getBatchReport and ensure exception is rethrown
-        val method = GetBatchSummaryListWithReportsUseCase::class.java.getDeclaredMethod(
-            "getBatchReport",
-            String::class.java,
-            Long::class.javaPrimitiveType
-        )
-        method.isAccessible = true
-
-        // make repository throw when fetching transactions
-        whenever(transactionRepository.getTransactionsFromBatchNumber(999L))
-            .thenThrow(RuntimeException("db fail"))
-
-        // invoking should rethrow
-        method.invoke(useCase, "tag", 999L)
-    }
-
-    // ---------------------------
-    // execute() mapping behavior
-    // ---------------------------
-    @Test
-    fun `execute returns batch summary responses for given batch numbers when no transactions`() {
-        // If repository returns null cursor for a batch, getBatchReport returns an empty report.
-        whenever(transactionRepository.getTransactionsFromBatchNumber(1L)).thenReturn(null)
-        whenever(transactionRepository.getTransactionsFromBatchNumber(2L)).thenReturn(null)
-
-        val results = useCase.execute("tag", listOf(1L, 2L))
-
-        assertEquals(2, results.size)
-        assertEquals(1L, results[0].batchNumber)
-        assertEquals(2L, results[1].batchNumber)
-        assertNotNull(results[0].batchReport)
-        assertNotNull(results[1].batchReport)
+        // finalize with empty list just to make sure finalize does not throw
+        val finalized = totals.finalizeBatchDeposits(emptyList())
+        assertNotNull(finalized)
+        assertTrue(finalized.isEmpty())
     }
 }
-
-
-
-
-
-
-body {
-  font-family: Arial, sans-serif;
-  margin: 20px;
-  background: #f8f9fa;
-}
-
-.tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-.tabs button {
-  padding: 10px 18px;
-  border: none;
-  background: #ddd;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.tabs button.active {
-  background: #007bff;
-  color: white;
-}
-
-#searchBox {
-  width: 300px;
-  padding: 8px;
-  margin-bottom: 12px;
-}
-
-#backBtn {
-  margin-bottom: 12px;
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-}
-
-table th, table td {
-  padding: 10px;
-  border: 1px solid #ccc;
-  text-align: left;
-}
-
-table tr:hover {
-  background: #f1f1f1;
-  cursor: pointer;
-}
-
-.progress-up {
-  color: green;
-  font-weight: bold;
-}
-
-.progress-down {
-  color: red;
-  font-weight: bold;
-}
-
 
 
 
